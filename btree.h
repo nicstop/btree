@@ -1,7 +1,7 @@
 #ifndef BTREE_HEADER_INCLUDE
 #define BTREE_HEADER_INCLUDE
 
-#define BTREE_ORDER 5
+#define BTREE_ORDER 2
 #define BTREE_NODE_COUNT (BTREE_ORDER * 2)
 #define BTREE_KEY_COUNT (BTREE_NODE_COUNT - 1)
 
@@ -29,7 +29,6 @@ typedef struct BTree {
 
 typedef struct BTreeStackFrame {
     BTreeNode *node;
-    BTreeKey *median;
     U32 key_index;
     struct BTreeStackFrame *next;
 } BTreeStackFrame;
