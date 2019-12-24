@@ -37,6 +37,7 @@ main(int argc, char *argv[])
         }
 
         bt_insert(&btree, ids[i], &ids[i], sizeof(ids[i]), &arena);
+        printf("\n");
     }
 
     bt_dump_tree(&btree, &arena);
