@@ -32,12 +32,20 @@ main(int argc, char *argv[])
     printf("------------------------------\n");
 
     for (i = 0; i < x_countof(ids); ++i) {
-        if (ids[i] == 45) {
+        if (ids[i] == 94) {
             int x = 0;
         }
 
         bt_insert(&btree, ids[i], &ids[i], sizeof(ids[i]), &arena);
         printf("\n");
+    }
+
+    for (i = 0; i < x_countof(ids); ++i) {
+        if (bt_search(&btree, ids[i]) != NULL) {
+            printf("Found %d\n", ids[i]);
+        } else {
+            x_assert_msg("detected an insert bug");
+        }
     }
 
     bt_dump_tree(&btree, &arena);

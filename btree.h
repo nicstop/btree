@@ -10,7 +10,6 @@
 #define BTREE_INVALID_ID UINT32_MAX
 typedef int BTreeKeyID;
 
-
 typedef struct BTreeKey {
     BTreeKeyID id;
     void *data;
@@ -18,7 +17,7 @@ typedef struct BTreeKey {
 } BTreeKey;
 
 typedef struct BTreeNode {
-    U32 next_key_index;
+    U32 key_count;
     BTreeKey keys[BTREE_KEY_COUNT];
     struct BTreeNode *subs[BTREE_NODE_COUNT];
 } BTreeNode;

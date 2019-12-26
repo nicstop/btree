@@ -52,6 +52,15 @@ bt_search_keys(BTreeKey *head, U32 id)
 
 #endif
 
+void
+bt_debug_printf(const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    vprintf(format, args);
+    va_end(args);
+}
+
 BTreeNode *
 bt_new_node(x_arena *memory)
 {
@@ -81,14 +90,14 @@ bt_shift_keys_right(BTreeNode *node, U32 start_key)
     S32 i;
 
     for (i = x_countof(node->keys) - 2; i >= 0; --i) {
+        if (i < (S32)start_key) {
+            break;
+        }
+
         node->keys[i + 1] = node->keys[i];
         node->keys[i].id = BTREE_INVALID_ID;
         node->keys[i].data = NULL;
         node->keys[i].data_size = 0;
-
-        if (i == (S32)start_key) {
-            break;
-        }
     }
 }
 
@@ -99,9 +108,9 @@ bt_search(BTree *tree, U32 id)
 
     while (node) {
         U32 i = 0;
-        BTreeNode *node_sub = node->subs[node->next_key_index];
+        BTreeNode *node_sub = node->subs[node->key_count];
 
-        for (i = 0; i < node->next_key_index; ++i) {
+        for (i = 0; i < node->key_count; ++i) {
             if (node->keys[i].id == id) {
                 return &node->keys[i];
             }
@@ -125,35 +134,24 @@ void
 bt_insert(BTree *tree, U32 id, void *data, U32 data_size, x_arena *arena)
 {
     BTreeNode *node;
-
     BTreeStackFrame *stack = 0;
-    BTreeStackFrame *frame_prev = 0;
-    BTreeStackFrame *frame = 0;
 
-    BTreeKey *median = 0;
-    U32 median_key = BTREE_INVALID_ID;
-    BTreeNode *node_split = 0;
-   
     if (tree->root == NULL) {
         tree->root = bt_new_node(arena);
     }
-
-    printf("Inserting: %d\n", id);
-
     node = tree->root;
+
     while (node) {
         U32 i;
         U32 key_index;
 
-
-        for (key_index = 0; key_index < node->next_key_index; ++key_index) {
+        for (key_index = 0; key_index < node->key_count; ++key_index) {
             if (node->keys[i].id == id) {
                 return;
             } else if (id < node->keys[key_index].id) {
                 break;
             }
         }
-
 
         {
             BTreeStackFrame *frame = x_arena_push_struct(arena, BTreeStackFrame);
@@ -163,109 +161,89 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size, x_arena *arena)
             stack = frame;
         }
 
-        if (node->subs[key_index] != NULL) {
-            printf("Descending to node %d\n", key_index);
-            node = node->subs[key_index];
-            continue;
+        if (node->subs[key_index] == NULL) {
+            x_assert(node->key_count < x_countof(node->keys));
+            bt_shift_keys_right(node, key_index);
+            node->keys[key_index].id = id;
+            node->keys[key_index].data = data;
+            node->keys[key_index].data_size = data_size;
+            node->key_count += 1;
+            node = NULL;
         } else {
-            printf("Traversing with key index %d\n", key_index);
+            node = node->subs[key_index];
+        }
+    }
+
+#if 0
+    bt_debug_printf("Associating data with key-index %d\n", key_index);
+    bt_debug_printf("Keys: ");
+    for (i = 0; i < node->key_count; ++i) {
+        bt_debug_printf("%d ", node->keys[i].id);
+    }
+    bt_debug_printf("\n");
+#endif
+
+    while (stack) {
+        BTreeKey *median_key = NULL;
+        BTreeNode *node_split = NULL;
+        U32 i;
+
+        node = stack->node;
+
+        if (node->key_count < x_countof(node->keys)) {
+            break;
         }
 
-        if (node->next_key_index >= x_countof(node->keys)) {
-            printf("No space for insert, splitting...\n");
+        node_split = bt_new_node(arena);
 
-            x_assert(bt_is_node_leaf(node));
+        for (i = x_countof(node->subs) / 2; i < x_countof(node->subs); ++i) {
+            node_split->subs[i - x_countof(node->subs) / 2] = node->subs[i];
+            node->subs[i] = NULL;
+        }
 
-            BTreeStackFrame *frame = stack;
-            BTreeStackFrame *frame_prev = 0;
+        for (i = 0; i < x_countof(node->keys) / 2; ++i) {
+            BTreeKey *key_a = &node_split->keys[node_split->key_count++];
+            BTreeKey *key_b = &node->keys[--node->key_count];
 
-            BTreeKey *median_key = NULL;
-            BTreeNode *node_split = NULL;
+            *key_a = *key_b;
+            x_memset(key_b, 0, sizeof(*key_b));
+            key_b->id = BTREE_INVALID_ID;
+        }
 
-            while (frame) {
-                node_split = bt_new_node(arena);
+        median_key = &node->keys[--node->key_count];
 
-                for (i = 0; i < x_countof(node->keys) / 2; ++i) {
-                    U32 k = x_countof(node->keys) / 2 + i + 1;
-                    x_assert(k < x_countof(node->keys));
+        if (stack->next) {
+            BTreeStackFrame *frame_parent = stack->next;
+            BTreeNode *node_parent = frame_parent->node;
+            S32 k;
 
-                    node_split->subs[i] = node->subs[k];
-                    node_split->subs[i] = NULL;
+            x_assert(node_parent->key_count < x_countof(node_parent->keys));
 
-                    node_split->keys[i] = node->keys[k];
+            bt_shift_keys_right(node_parent, frame_parent->key_index);
+            node_parent->keys[frame_parent->key_index] = *median_key;
+            x_memset(median_key, 0, sizeof(*median_key));
+            node_parent->key_count += 1;
 
-                    node->keys[k].id = BTREE_INVALID_ID;
-                    node->keys[k].data = 0;
-                    node->keys[k].data_size = 0;
-                }
-
-                node->next_key_index = i;
-                node_split->next_key_index = i;
-
-                median_key = &node->keys[i];
-                printf("Median %d\n", median_key->id);
-
-                if (frame->next) {
-                    BTreeStackFrame *frame_parent = frame->next;
-                    BTreeNode *node_parent = frame_parent->node;
-                    U32 node_split_key_index = frame_parent->key_index;
-
-                    if (node_parent->next_key_index < x_countof(node_parent->keys)) {
-                        S32 k;
-
-                        bt_shift_keys_right(node_parent, node_split_key_index);
-
-                        node_parent->keys[node_split_key_index] = *median_key;
-                        x_memset(median_key, 0, sizeof(*median_key));
-
-                        node_split_key_index += 1;
-                        for (k = node_parent->next_key_index; k > (S32)node_split_key_index; --k) {
-                            node_parent->subs[k + 1] = node_parent->subs[k];
-                            node_parent->subs[k] = NULL;
-                        }
-
-                        x_assert(node_parent->subs[node_split_key_index] == NULL);
-                        node_parent->subs[node_split_key_index] = node_split;
-                        printf("Storing split node in the %d slot\n", node_split_key_index);
-                    } else {
-                        printf("recursive parent splitting is not implemented.\n");
-                        int x = 0;
-                    }
-                } else {
-                    /* NOTE(nick): Splitting reached root node, increasing height of the tree. */
-                    BTreeNode *new_root = bt_new_node(arena);
-                    new_root->next_key_index = 1;
-                    new_root->keys[0] = *median_key;
-                    new_root->subs[0] = node;
-                    new_root->subs[1] = node_split;
-                    tree->root = new_root;
-
-                    x_memset(median_key, 0, sizeof(*median_key));
-
-                    printf("Splitting went up to the top, inserting a new root node.\n");
-                    return;
-                }
-
-                frame_prev = frame;
-                frame = frame->next;
+            frame_parent->key_index += 1;
+            for (k = node_parent->key_count; k >= (S32)frame_parent->key_index; --k) {
+                node_parent->subs[k + 1] = node_parent->subs[k];
+                node_parent->subs[k] = NULL;
             }
+
+            x_assert(node_parent->subs[frame_parent->key_index] == NULL);
+            node_parent->subs[frame_parent->key_index] = node_split;
+        } else {
+            /* NOTE(nick): Splitting reached root node, increasing height of the tree. */
+            BTreeNode *new_root = bt_new_node(arena);
+            new_root->key_count = 1;
+            new_root->keys[0] = *median_key;
+            new_root->subs[0] = node;
+            new_root->subs[1] = node_split;
+            tree->root = new_root;
+            x_memset(median_key, 0, sizeof(*median_key));
         }
 
-        bt_shift_keys_right(node, key_index);
-
-        node->keys[key_index].id = id;
-        node->keys[key_index].data = data;
-        node->keys[key_index].data_size = data_size;
-        node->next_key_index += 1;
-
-        printf("Associating data with key-index %d\n", key_index);
-        printf("Keys: ");
-        for (i = 0; i < node->next_key_index; ++i) {
-            printf("%d ", node->keys[i].id);
-        }
-        printf("\n");
-
-        break;
+        stack = stack->next;
     }
 }
 
@@ -282,10 +260,10 @@ bt_dump_tree(BTree *tree, x_arena *arena)
     while (node) {
         U32 i;
 
-        for (i = 0; i < node->next_key_index; ++i) {
-            printf("%d ", node->keys[i].id);
+        for (i = 0; i < node->key_count; ++i) {
+            bt_debug_printf("%d ", node->keys[i].id);
         }
-        printf("\n");
+        bt_debug_printf("\n");
 
         if (bt_is_node_leaf(node)) {
             if (stack) {
