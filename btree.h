@@ -10,9 +10,12 @@
 #define BTREE_INVALID_ID UINT32_MAX
 typedef int BTreeKeyID;
 
-#define bt_memcopy(dst, src, size) x_memcpy(dst, src, size)
-#define bt_memmove(dst, src, size) x_memcpy(dst, src, size); x_memset(src, 0, size)
-#define bt_memset(ptr, value, size) x_memset(ptr, value, size)
+#ifndef BTREE_CUSTOM_MEM
+    #include <string.h>
+    #define bt_memcopy(dst, src, size)  memcpy(dst, src, size)
+    #define bt_memmove(dst, src, size)  memcpy(dst, src, size); memset(src, 0, size)
+    #define bt_memset(ptr, value, size) memset(ptr, value, size)
+#endif
 
 typedef struct BTreeKey {
     BTreeKeyID id;
