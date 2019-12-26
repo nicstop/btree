@@ -8,9 +8,7 @@
 #include "xlib/core/arena.h"
 
 #define BTREE_IMPLEMENTATION
-
 #include "btree.h"
-#include "btree.c"
 
 int 
 main(int argc, char *argv[])
@@ -26,37 +24,28 @@ main(int argc, char *argv[])
 
     x_arena_init(&arena, &buffer[0], sizeof(buffer));
 
-    printf("BTree Stats:\n");
+    printf("B-Tree Stats:\n");
     printf("Key count = %d\n", BTREE_KEY_COUNT);
     printf("Node count = %d\n", BTREE_NODE_COUNT);
     printf("------------------------------\n");
 
     for (i = 0; i < x_countof(ids); ++i) {
-        if (ids[i] == 94) {
-            int x = 0;
-        }
+        U32 k;
 
+        printf("Inserting %d...", ids[i]);
         bt_insert(&btree, ids[i], &ids[i], sizeof(ids[i]), &arena);
-        printf("\n");
-    }
 
-    for (i = 0; i < x_countof(ids); ++i) {
-        if (bt_search(&btree, ids[i]) != NULL) {
-            printf("Found %d\n", ids[i]);
-        } else {
-            x_assert_msg("detected an insert bug");
+        for (k = 0; k < i; ++k) {
+            if (bt_search(&btree, ids[k]) != NULL) {
+            } else {
+                printf("error, insert broke node search. Cannot find %d\n", ids[k]);
+                break;
+            }
         }
-    }
 
-    bt_dump_tree(&btree, &arena);
-
-    {
-        BTreeKey *key = bt_search(&btree, 85);
-        int x = 0;
-    }
-
-    for (i = 0; i < BTREE_KEY_COUNT; ++i) {
-        printf("%d = %d\n", i, btree.root->keys[i].id);
+        if (k == i) {
+            printf("OK.\n");
+        }
     }
 
     return 0;
