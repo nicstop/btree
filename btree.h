@@ -8,9 +8,8 @@
  */
 
 /* NOTE(nick): Here you can pick which order you want for this tree. */
-#define BTREE_ORDER 2
-#define BTREE_NODE_COUNT (BTREE_ORDER * 2)
-#define BTREE_KEY_COUNT (BTREE_NODE_COUNT - 1)
+#define BTREE_NODE_COUNT 4 
+#define BTREE_KEY_COUNT ((BTREE_NODE_COUNT) - 1) 
 
 #define BTREE_API
 #define BTREE_INTERNAL
@@ -386,7 +385,7 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
         while (stack) {
             BTreeStackFrame frame = *stack;
             BTreeNode *node_split = NULL;
-            BTreeKey *median_key = NULL;
+            BTreeKey median_key;
             U32 i;
 
             if (frame.node->key_count < x_countof(frame.node->keys)) {
@@ -401,15 +400,26 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
                 frame.node->subs[i] = NULL;
             }
 
-            for (i = 0; i < x_countof(frame.node->keys) / 2; ++i) {
+            for (i = x_countof(frame.node->keys) / 2; i < x_countof(frame.node->keys); ++i) {
                 BTreeKey *key_a = &node_split->keys[node_split->key_count++];
-                BTreeKey *key_b = &frame.node->keys[--frame.node->key_count];
+                BTreeKey *key_b = &frame.node->keys[i];
+                frame.node->key_count -= 1;
                 *key_a = *key_b;
                 bt_memset(key_b, 0, sizeof(*key_b));
                 key_b->id = BTREE_INVALID_ID;
             }
 
-            median_key = &frame.node->keys[--frame.node->key_count];
+            if (node_split->key_count > frame.node->key_count) {
+                median_key = node_split->keys[0];
+                bt_shift_keys_left(node_split, 0);
+                node_split->key_count -= 1;
+                x_assert(node_split->key_count > 0);
+            } else {
+                median_key = frame.node->keys[frame.node->key_count - 1];
+                bt_shift_keys_left(frame.node, frame.node->key_count);
+                frame.node->key_count -= 1;
+                x_assert(frame.node->key_count > 0);
+            }
 
             if (stack->next) {
                 BTreeStackFrame frame_parent = *stack->next;
@@ -418,8 +428,7 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
                 x_assert(frame_parent.node->key_count < x_countof(frame_parent.node->keys));
 
                 bt_shift_keys_right(frame_parent.node, frame_parent.key_index);
-                frame_parent.node->keys[frame_parent.key_index] = *median_key;
-                bt_memset(median_key, 0, sizeof(*median_key));
+                frame_parent.node->keys[frame_parent.key_index] = median_key;
                 frame_parent.node->key_count += 1;
 
                 frame_parent.key_index += 1;
@@ -434,11 +443,10 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
                 /* NOTE(nick): Splitting reached root node, inserting a new root. */
                 BTreeNode *new_root = bt_new_node(tree);
                 new_root->key_count = 1;
-                new_root->keys[0] = *median_key;
+                new_root->keys[0] = median_key;
                 new_root->subs[0] = frame.node;
                 new_root->subs[1] = node_split;
                 tree->root = new_root;
-                bt_memset(median_key, 0, sizeof(*median_key));
             }
 
             stack = stack->next;
