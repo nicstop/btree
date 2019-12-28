@@ -2,7 +2,9 @@
 #define BTREE_HEADER_INCLUDE
 
 /* 
- * B-Tree single-header library by Nikita Smith 
+ * B-Tree single-header lib.
+ * -------------------------------------------------------------------------------- 
+ * Nikita Smith 
  */
 
 /* NOTE(nick): Here you can pick which order you want for this tree. */
@@ -476,9 +478,7 @@ bt_delete(BTree *tree, U32 id)
     }
 
     {
-        /* NOTE(nick): Traverse left branches and pick biggest ID as a new separator.
-         * It is possible to traverse right branches instead, but in that case
-         * all keys must be shifted to the left since largest new separator is the first key. */
+        /* NOTE(nick): Picking largest ID on the left branch of node_delete. */
 
         BTreeStackFrame *frame_with_separator = NULL;
 
@@ -506,7 +506,7 @@ bt_delete(BTree *tree, U32 id)
 
         tree->stack = frame_with_separator;
 
-        bt_dump_stack(tree);
+        /* bt_dump_stack(tree); */
     }
 
     if (node_new_separator != NULL) {
@@ -560,11 +560,17 @@ bt_delete(BTree *tree, U32 id)
         } 
 
         if (node_right != NULL && node_right->key_count > 1) {
+            x_assert(frame.node->subs[2] == NULL);
+
             frame.node->keys[0] = frame_parent.node->keys[frame_parent.key_index];
+            frame.node->subs[1] = node_right->subs[0];
             frame.node->key_count += 1;
 
             frame_parent.node->keys[frame_parent.key_index] = node_right->keys[0];
+
+            bt_shift_subs_left(node_right, 0);
             bt_shift_keys_left(node_right, 0);
+
             node_right->key_count -= 1;
         } else if (node_left != NULL && node_left->key_count > 1) {
             frame.node->keys[0] = frame_parent.node->keys[frame_parent.key_index - 1];

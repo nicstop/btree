@@ -11,7 +11,7 @@
 #define BTREE_IMPLEMENTATION
 #include "btree.h"
 
-static U32 ids[] = { 48, 85, 45, 92, 26, 49, 27, 22, 10, 93, 94, 96, 97 }; // , 98, 39, 83, 52, 73, 84, 76, 99, 32, 33, 75, 78 }; 
+static U32 ids[] = { 48, 85, 45, 92, 26, 49, 27, 22, 10, 93, 94, 96, 97, 98, 39, 83, 52, 73, 84, 76, 99, 32, 33, 75, 78 }; 
 
 BTREE_MALLOC_SIG(test_malloc)
 {
@@ -101,15 +101,19 @@ main(int argc, char *argv[])
     printf("Node count = %d\n", BTREE_NODE_COUNT);
     printf("------------------------------\n");
 
-#if 0
+#if 1
     for (i = 0; i < x_countof(ids); ++i) {
         if (!test_id(ids[i])) {
             printf("Test failed for %d\n", ids[i]);
             break;
         }
     }
+    if (i == x_countof(ids)) {
+        printf("-------------------------\n");
+        printf("All tests passed!\n");
+    }
 #else
-    test_id(93);
+    test_id(85);
 #endif
 
     return 0;
