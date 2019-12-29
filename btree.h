@@ -170,7 +170,7 @@ bt_new_node(BTree *tree)
 }
 
 BTREE_INTERNAL void
-bt_node_clear_key(BTreeNode *node, U32 key_index)
+bt_node_invalidate_key(BTreeNode *node, U32 key_index)
 {
     x_assert(key_index < x_countof(node->keys));
     node->keys[key_index].id = BTREE_INVALID_ID;
@@ -197,7 +197,7 @@ bt_shift_keys_left(BTreeNode *node, U32 key_index)
     x_assert(node->key_count > 0);
     for (i = key_index; i < node->key_count - 1; ++i) {
         node->keys[i] = node->keys[i + 1];
-        bt_node_clear_key(node, i + 1);
+        bt_node_invalidate_key(node, i + 1);
     }
 }
 
@@ -210,7 +210,7 @@ bt_shift_keys_right(BTreeNode *node, U32 start_key)
             break;
         }
         node->keys[i + 1] = node->keys[i];
-        bt_node_clear_key(node, i);
+        bt_node_invalidate_key(node, i);
     }
 }
 
@@ -310,34 +310,6 @@ bt_destroy(BTree *tree)
     /* TODO(nick): IMPLEMENT */
 }
 
-BTREE_INTERNAL BTreeStackFrame *
-bt_build_stack(BTree *tree, BTreeNode *node, U32 id)
-{
-    bt_reset_stack(tree);
-    while (node) {
-        U32 key_index;
-
-        for (key_index = 0; key_index < node->key_count; ++key_index) {
-            if (node->keys[key_index].id == id) {
-                break;
-            } else if (id < node->keys[key_index].id) {
-                break;
-            }
-        }
-
-        /* NOTE(nick): Pushing frame in case we need to split. */
-        bt_push_stack_frame(tree, node, key_index);
-
-        if (node->subs[key_index] == NULL) {
-            node = NULL;
-        } else {
-            node = node->subs[key_index];
-        }
-    }
-
-    return tree->stack;
-}
-
 BTREE_API BTreeKey *
 bt_search(BTree *tree, U32 id)
 {
@@ -370,30 +342,53 @@ bt_search(BTree *tree, U32 id)
 BTREE_API void
 bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
 {
-    BTreeStackFrame *stack;
+    BTreeStackFrame frame;
 
     if (!tree->root) {
         tree->root = bt_new_node(tree);
     }
 
-    stack = bt_build_stack(tree, tree->root, id);
-    if (stack) {
+    {
+        BTreeNode *node = tree->root;
+
+        bt_reset_stack(tree);
+        while (node) {
+            U32 key_index;
+
+            for (key_index = 0; key_index < node->key_count; ++key_index) {
+                if (node->keys[key_index].id == id) {
+                    break;
+                } else if (id < node->keys[key_index].id) {
+                    break;
+                }
+            }
+
+            /* NOTE(nick): Pushing frame in case we need to split. */
+            bt_push_stack_frame(tree, node, key_index);
+
+            if (node->subs[key_index] != NULL) {
+                node = node->subs[key_index];
+            } else {
+                node = NULL;
+            }
+        }
+    }
+
+    if (bt_peek_stack_frame(tree, &frame)) {
         bt_dump_stack(tree);
 
-        if (stack->node->keys[stack->key_index].id != id) {
-            x_assert(stack->node->key_count < x_countof(stack->node->keys));
-            bt_shift_keys_right(stack->node, stack->key_index);
-            stack->node->keys[stack->key_index].id = id;
-            stack->node->keys[stack->key_index].data = data;
-            stack->node->keys[stack->key_index].data_size = data_size;
-            stack->node->key_count += 1;
+        if (frame.node->keys[frame.key_index].id != id) {
+            x_assert(frame.node->key_count < x_countof(frame.node->keys));
+            bt_shift_keys_right(frame.node, frame.key_index);
+            frame.node->keys[frame.key_index].id = id;
+            frame.node->keys[frame.key_index].data = data;
+            frame.node->keys[frame.key_index].data_size = data_size;
+            frame.node->key_count += 1;
         }
     }
 
     {
-
-        while (stack) {
-            BTreeStackFrame frame = *stack;
+        while (bt_pop_stack_frame(tree, &frame)) {
             BTreeNode *node_split = NULL;
             BTreeKey median_key;
             U32 i;
@@ -420,7 +415,7 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
                 BTreeKey *key_b = &frame.node->keys[i];
                 frame.node->key_count -= 1;
                 *key_a = *key_b;
-                bt_node_clear_key(frame.node, i);
+                bt_node_invalidate_key(frame.node, i);
             }
 
             if (node_split->key_count > frame.node->key_count) {
@@ -437,45 +432,46 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
 
             bt_debug_printf("Median: %d\n", median_key.id);
 
-            if (stack->next) {
-                BTreeStackFrame frame_parent = *stack->next;
-                S32 k;
+            {
+                BTreeStackFrame frame_parent;
 
-                x_assert(frame_parent.node->key_count < x_countof(frame_parent.node->keys));
+                if (bt_peek_stack_frame(tree, &frame_parent)) {
+                    S32 k;
 
-                bt_shift_keys_right(frame_parent.node, frame_parent.key_index);
-                frame_parent.node->keys[frame_parent.key_index] = median_key;
-                frame_parent.node->key_count += 1;
+                    x_assert(frame_parent.node->key_count < x_countof(frame_parent.node->keys));
 
-                bt_debug_printf("node_split: ");
-                bt_dump_node_keys(node_split);
+                    bt_shift_keys_right(frame_parent.node, frame_parent.key_index);
+                    frame_parent.node->keys[frame_parent.key_index] = median_key;
+                    frame_parent.node->key_count += 1;
 
-                frame_parent.key_index += 1;
+                    bt_debug_printf("node_split: ");
+                    bt_dump_node_keys(node_split);
 
-                bt_shift_subs_right(frame_parent.node, frame_parent.key_index);
+                    frame_parent.key_index += 1;
 
-                x_assert(frame_parent.node->subs[frame_parent.key_index] == NULL);
-                frame_parent.node->subs[frame_parent.key_index] = node_split;
+                    bt_shift_subs_right(frame_parent.node, frame_parent.key_index);
 
-                bt_debug_printf("Inserting median into frame_parent.node, key dump:\n");
-                bt_dump_node_keys(frame_parent.node);
-            } else {
-                /* NOTE(nick): Splitting reached root node, inserting a new root. */
-                BTreeNode *new_root = bt_new_node(tree);
-                new_root->key_count = 1;
-                new_root->keys[0] = median_key;
-                new_root->subs[0] = frame.node;
-                new_root->subs[1] = node_split;
-                tree->root = new_root;
+                    x_assert(frame_parent.node->subs[frame_parent.key_index] == NULL);
+                    frame_parent.node->subs[frame_parent.key_index] = node_split;
 
-                bt_debug_printf("Creating a new root node with median.\n");
-                bt_debug_printf("Keys on left:\n");
-                bt_dump_node_keys(frame.node);
-                bt_debug_printf("Keys on right:\n");
-                bt_dump_node_keys(node_split);
+                    bt_debug_printf("Inserting median into frame_parent.node, key dump:\n");
+                    bt_dump_node_keys(frame_parent.node);
+                } else {
+                    /* NOTE(nick): Splitting reached root node, inserting a new root. */
+                    BTreeNode *new_root = bt_new_node(tree);
+                    new_root->key_count = 1;
+                    new_root->keys[0] = median_key;
+                    new_root->subs[0] = frame.node;
+                    new_root->subs[1] = node_split;
+                    tree->root = new_root;
+
+                    bt_debug_printf("Creating a new root node with median.\n");
+                    bt_debug_printf("Keys on left:\n");
+                    bt_dump_node_keys(frame.node);
+                    bt_debug_printf("Keys on right:\n");
+                    bt_dump_node_keys(node_split);
+                }
             }
-
-            stack = stack->next;
         }
     }
 }
@@ -547,7 +543,7 @@ bt_delete(BTree *tree, U32 id)
         /* NOTE(nick): Replacing deleted key with a new separator. Also, there is no
          * need to shift keys to left since it is a last key. */
         node_delete->keys[key_index_delete] = node_new_separator->keys[node_new_separator->key_count - 1];
-        bt_node_clear_key(node_new_separator, node_new_separator->key_count - 1);
+        bt_node_invalidate_key(node_new_separator, node_new_separator->key_count - 1);
         node_new_separator->key_count -= 1;
     } else {
         bt_shift_keys_left(node_delete, key_index_delete);
@@ -613,7 +609,7 @@ bt_delete(BTree *tree, U32 id)
             node_left->subs[node_left->key_count] = NULL;
 
             frame_parent.node->keys[frame_parent.key_index - 1] = node_left->keys[node_left->key_count - 1];
-            bt_node_clear_key(node_left, node_left->key_count - 1);
+            bt_node_invalidate_key(node_left, node_left->key_count - 1);
             node_left->key_count -= 1;
         } else {
             BTreeNode *node_container;
@@ -649,7 +645,7 @@ bt_delete(BTree *tree, U32 id)
                         node_container->keys[node_container->key_count] = node_right->keys[i];
                         node_container->subs[node_container->key_count] = node_right->subs[i];
 
-                        bt_node_clear_key(node_right, i);
+                        bt_node_invalidate_key(node_right, i);
                         bt_shift_subs_left(node_right, i);
 
                         node_container->key_count += 1;
@@ -666,7 +662,7 @@ bt_delete(BTree *tree, U32 id)
                 }
             }
 
-            bt_node_clear_key(node_separator, node_separator->key_count - 1);
+            bt_node_invalidate_key(node_separator, node_separator->key_count - 1);
             node_separator->key_count -= 1;
 
             if (frame_parent.node == tree->root) {
