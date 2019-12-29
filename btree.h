@@ -125,6 +125,9 @@ bt_reset_stack(BTree *tree);
 BTREE_INTERNAL void
 bt_dump_stack(BTree *tree);
 
+BTREE_INTERNAL void
+bt_dump_node_keys(BTreeNode *node);
+
 #endif /* BTREE_HEADER_INCLUDE */
 
 #ifdef BTREE_IMPLEMENTATION
@@ -370,6 +373,8 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
 
     stack = bt_build_stack(tree, tree->root, id);
     if (stack) {
+        bt_dump_stack(tree);
+
         if (stack->node->keys[stack->key_index].id != id) {
             x_assert(stack->node->key_count < x_countof(stack->node->keys));
             bt_shift_keys_right(stack->node, stack->key_index);
@@ -392,7 +397,12 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
                 break;
             }
 
+            bt_debug_printf("--------------------------------------------------------------------------------\n");
+
             node_split = bt_new_node(tree);
+
+            bt_debug_printf("Detected a full node, splitting keys:\n");
+            bt_dump_node_keys(frame.node);
 
             /* NOTE(nick): Copy upper-half of the sub-nodes to the split node. */
             for (i = x_countof(frame.node->subs) / 2; i < x_countof(frame.node->subs); ++i) {
@@ -413,13 +423,15 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
                 median_key = node_split->keys[0];
                 bt_shift_keys_left(node_split, 0);
                 node_split->key_count -= 1;
-                x_assert(node_split->key_count > 0);
             } else {
                 median_key = frame.node->keys[frame.node->key_count - 1];
                 bt_shift_keys_left(frame.node, frame.node->key_count);
                 frame.node->key_count -= 1;
-                x_assert(frame.node->key_count > 0);
             }
+            x_assert(node_split->key_count > 0);
+            x_assert(frame.node->key_count > 0);
+
+            bt_debug_printf("Median: %d\n", median_key.id);
 
             if (stack->next) {
                 BTreeStackFrame frame_parent = *stack->next;
@@ -431,14 +443,18 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
                 frame_parent.node->keys[frame_parent.key_index] = median_key;
                 frame_parent.node->key_count += 1;
 
+                bt_debug_printf("node_split: ");
+                bt_dump_node_keys(node_split);
+
                 frame_parent.key_index += 1;
-                for (k = frame_parent.node->key_count; k >= (S32)frame_parent.key_index; --k) {
-                    frame_parent.node->subs[k + 1] = frame_parent.node->subs[k];
-                    frame_parent.node->subs[k] = NULL;
-                }
+
+                bt_shift_subs_right(frame_parent.node, frame_parent.key_index);
 
                 x_assert(frame_parent.node->subs[frame_parent.key_index] == NULL);
                 frame_parent.node->subs[frame_parent.key_index] = node_split;
+
+                bt_debug_printf("Inserting median into frame_parent.node, key dump:\n");
+                bt_dump_node_keys(frame_parent.node);
             } else {
                 /* NOTE(nick): Splitting reached root node, inserting a new root. */
                 BTreeNode *new_root = bt_new_node(tree);
@@ -447,6 +463,12 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
                 new_root->subs[0] = frame.node;
                 new_root->subs[1] = node_split;
                 tree->root = new_root;
+
+                bt_debug_printf("Creating a new root node with median.\n");
+                bt_debug_printf("Keys on left:\n");
+                bt_dump_node_keys(frame.node);
+                bt_debug_printf("Keys on right:\n");
+                bt_dump_node_keys(node_split);
             }
 
             stack = stack->next;
@@ -678,6 +700,27 @@ bt_dump_stack(BTree *tree)
         }
         depth += 1;
         frame = frame->next;
+    }
+}
+
+BTREE_INTERNAL void
+bt_dump_node_keys(BTreeNode *node)
+{
+    U32 i;
+    for (i = 0; i < node->key_count; ++i) {
+        bt_debug_printf("%d ", node->keys[i].id);
+    }
+    bt_debug_printf("\n");
+
+    for (i = 0; i < x_countof(node->subs); ++i) {
+        if (node->subs[i] != NULL) {
+            U32 k;
+            bt_debug_printf("Sub key %d, key_count = %d, 0x%llx:\n", i, node->subs[i]->key_count, node->subs[i]);
+            for (k = 0; k < node->subs[i]->key_count; ++k) {
+                bt_debug_printf("%d ", node->subs[i]->keys[k].id);
+            }
+            bt_debug_printf("\n");
+        }
     }
 }
 

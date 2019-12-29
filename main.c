@@ -1,6 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <malloc.h>
+
+#if defined(__MACH__)
+    #include <stdlib.h>
+#else
+    #include <malloc.h>
+#endif
 
 #define XLIB_CORE_IMPLEMENTATION
 #include "xlib/core/core.h"
@@ -57,7 +62,7 @@ test_id(U32 test_id)
             if (bt_search(&btree, ids[k]) != NULL) {
             } else {
                 printf("error, insert broke node search. Cannot find %d\n", ids[k]);
-                break;
+                return bt_false;
             }
         }
 
