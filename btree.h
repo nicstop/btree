@@ -169,6 +169,15 @@ bt_new_node(BTree *tree)
     return node;
 }
 
+BTREE_INTERNAL void
+bt_node_clear_key(BTreeNode *node, U32 key_index)
+{
+    x_assert(key_index < x_countof(node->keys));
+    node->keys[key_index].id = BTREE_INVALID_ID;
+    node->keys[key_index].data = NULL;
+    node->keys[key_index].data_size = 0;
+}
+
 BTREE_INTERNAL bt_bool
 bt_is_node_leaf(BTreeNode *node)
 {
@@ -188,9 +197,7 @@ bt_shift_keys_left(BTreeNode *node, U32 key_index)
     x_assert(node->key_count > 0);
     for (i = key_index; i < node->key_count - 1; ++i) {
         node->keys[i] = node->keys[i + 1];
-        node->keys[i + 1].id = BTREE_INVALID_ID;
-        node->keys[i + 1].data = NULL;
-        node->keys[i + 1].data_size = 0;
+        bt_node_clear_key(node, i + 1);
     }
 }
 
@@ -203,9 +210,7 @@ bt_shift_keys_right(BTreeNode *node, U32 start_key)
             break;
         }
         node->keys[i + 1] = node->keys[i];
-        node->keys[i].id = BTREE_INVALID_ID;
-        node->keys[i].data = NULL;
-        node->keys[i].data_size = 0;
+        bt_node_clear_key(node, i);
     }
 }
 
@@ -415,8 +420,7 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
                 BTreeKey *key_b = &frame.node->keys[i];
                 frame.node->key_count -= 1;
                 *key_a = *key_b;
-                bt_memset(key_b, 0, sizeof(*key_b));
-                key_b->id = BTREE_INVALID_ID;
+                bt_node_clear_key(frame.node, i);
             }
 
             if (node_split->key_count > frame.node->key_count) {
@@ -543,9 +547,7 @@ bt_delete(BTree *tree, U32 id)
         /* NOTE(nick): Replacing deleted key with a new separator. Also, there is no
          * need to shift keys to left since it is a last key. */
         node_delete->keys[key_index_delete] = node_new_separator->keys[node_new_separator->key_count - 1];
-        node_new_separator->keys[node_new_separator->key_count - 1].id = BTREE_INVALID_ID;
-        node_new_separator->keys[node_new_separator->key_count - 1].data = NULL;
-        node_new_separator->keys[node_new_separator->key_count - 1].data_size = 0;
+        bt_node_clear_key(node_new_separator, node_new_separator->key_count - 1);
         node_new_separator->key_count -= 1;
     } else {
         bt_shift_keys_left(node_delete, key_index_delete);
@@ -611,9 +613,7 @@ bt_delete(BTree *tree, U32 id)
             node_left->subs[node_left->key_count] = NULL;
 
             frame_parent.node->keys[frame_parent.key_index - 1] = node_left->keys[node_left->key_count - 1];
-            node_left->keys[node_left->key_count - 1].id = BTREE_INVALID_ID;
-            node_left->keys[node_left->key_count - 1].data = NULL;
-            node_left->keys[node_left->key_count - 1].data_size = 0;
+            bt_node_clear_key(node_left, node_left->key_count - 1);
             node_left->key_count -= 1;
         } else {
             BTreeNode *node_container;
@@ -649,10 +649,7 @@ bt_delete(BTree *tree, U32 id)
                         node_container->keys[node_container->key_count] = node_right->keys[i];
                         node_container->subs[node_container->key_count] = node_right->subs[i];
 
-                        node_right->keys[i].id = BTREE_INVALID_ID;
-                        node_right->keys[i].data = NULL;
-                        node_right->keys[i].data_size = 0;
-
+                        bt_node_clear_key(node_right, i);
                         bt_shift_subs_left(node_right, i);
 
                         node_container->key_count += 1;
@@ -669,10 +666,8 @@ bt_delete(BTree *tree, U32 id)
                 }
             }
 
+            bt_node_clear_key(node_separator, node_separator->key_count - 1);
             node_separator->key_count -= 1;
-            node_separator->keys[node_separator->key_count].id = BTREE_INVALID_ID;
-            node_separator->keys[node_separator->key_count].data = NULL;
-            node_separator->keys[node_separator->key_count].data_size = 0;
 
             if (frame_parent.node == tree->root) {
                 if (frame_parent.node->key_count == 0) {
