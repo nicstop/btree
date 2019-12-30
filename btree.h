@@ -487,7 +487,7 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
                 bt_node_set_sub(frame.node, i, NULL);
             }
 
-            /* NOTE(nick): Copy upper-half of the sub-nodes to the split node. */
+            /* NOTE(nick): Copy upper-half of the keys to the split node. */
             for (i = x_countof(frame.node->keys) / 2; i < x_countof(frame.node->keys); ++i) {
                 BTreeKey *key = bt_node_get_key(frame.node, i);
                 bt_node_add_key(node_split, key->id, key->data, key->data_size);
