@@ -33,6 +33,12 @@ BTREE_REALLOC_SIG(test_realloc)
     x_assert_msg("no realloc, increase arena size");
 }
 
+BTREE_VISIT_NODES_SIG(test_visit_nodes)
+{
+    //printf("Visited %d\n", id);
+    return bt_true;
+}
+
 bt_bool
 test_id(U32 test_id)
 {
@@ -70,6 +76,9 @@ test_id(U32 test_id)
             printf("OK.\n");
         }
     }
+
+    bt_visit_nodes(&btree, NULL, test_visit_nodes);
+    return false;
 
     printf("---------------------------\n");
     printf("Deleting %d\n", test_id);
