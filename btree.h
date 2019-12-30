@@ -170,6 +170,74 @@ bt_new_node(BTree *tree)
 }
 
 BTREE_INTERNAL void
+bt_node_set_key(BTreeNode *node, U32 key_index, BTreeKeyID id, void *data, U32 data_size)
+{
+    x_assert(key_index < x_countof(node->keys));
+    node->keys[key_index].id = id;
+    node->keys[key_index].data = data;
+    node->keys[key_index].data_size = data_size;
+}
+
+BTREE_INTERNAL BTreeKey *
+bt_node_get_key(BTreeNode *node, U32 key_index)
+{
+    x_assert(key_index < x_countof(node->keys));
+    return &node->keys[key_index];
+}
+
+BTREE_INTERNAL void
+bt_node_add_key(BTreeNode *node, BTreeKeyID id, void *data, U32 data_size)
+{
+    if (node->key_count < x_countof(node->keys)) {
+        bt_node_set_key(node, node->key_count, id, data, data_size);
+        node->key_count += 1;
+    } else {
+        x_assert_msg("cannot add key to a full node");
+    }
+}
+
+BTREE_INTERNAL void
+bt_node_remove_key(BTreeNode *node)
+{
+    if (node->key_count > 0) {
+        node->key_count -= 1;
+        bt_node_set_key(node, node->key_count, BTREE_INVALID_ID, NULL, 0);
+    } else {
+        x_assert_msg("no keys to remove from an empty node");
+    }
+}
+
+BTREE_INTERNAL bt_bool
+bt_node_set_sub(BTreeNode *node, U32 sub_index, BTreeNode *sub)
+{
+    bt_bool result = bt_false;
+
+    if (sub_index < x_countof(node->subs)) {
+        node->subs[sub_index] = sub;
+        result = bt_true;
+    } else {
+        x_assert_msg("sub index out of bounds");
+    }
+
+    return result;
+}
+
+BTREE_INTERNAL BTreeNode *
+bt_node_get_sub(BTreeNode *node, U32 sub_index)
+{
+    BTreeNode *result;
+
+    if (sub_index < x_countof(node->subs)) {
+        result = node->subs[sub_index];
+    } else {
+        x_assert("sub index out of bounds, returning NULL");
+        result = NULL;
+    }
+
+    return result;
+}
+
+BTREE_INTERNAL void
 bt_node_invalidate_key(BTreeNode *node, U32 key_index)
 {
     x_assert(key_index < x_countof(node->keys));
