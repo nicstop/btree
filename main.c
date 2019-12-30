@@ -16,11 +16,24 @@
 #define BTREE_IMPLEMENTATION
 #include "btree.h"
 
-static U32 ids[] = { 48, 85, 45, 92, 26, 49, 27, 22, 10, 93, 94, 96, 97, 98, 39, 83, 52, 73, 84, 76, 99, 32, 33, 75, 78 }; 
+static U32 ids[] = { 48, 85, 45, 92, 26, 49, 27, 22, 10, 93, 94, 96, 97,  98, 39, 83, 52, 73, 84, 76, 99, 32, 33, 75, 78 }; 
 
 BTREE_MALLOC_SIG(test_malloc)
 {
+#if 0
+    static char memory[1024 * 16];
+    static U32 cursor = 0;
+
+    void *result;
+
+    x_assert(cursor + size <= sizeof(memory));
+    result = (void *)(memory + cursor);
+    cursor += size;
+
+    return result;
+#else
     return malloc(size);
+#endif
 }
 
 BTREE_FREE_SIG(test_free)

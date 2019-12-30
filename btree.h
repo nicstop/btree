@@ -147,7 +147,7 @@ bt_debug_printf(const char *format, ...)
 BTREE_INTERNAL void *
 bt_malloc(BTree *tree, size_t size)
 {
-    return tree->allocator.alloc_memory(tree->allocator.alloc_memory_context, sizeof(BTreeNode));
+    return tree->allocator.alloc_memory(tree->allocator.alloc_memory_context, size);
 }
 
 BTREE_INTERNAL void
@@ -786,11 +786,13 @@ bt_visit_nodes(BTree *tree, void *user_context, bt_visit_nodes_sig *visit)
                         if (frame.node->subs[frame.key_index] != NULL) {
                             bt_push_stack_frame(tree, frame.node, frame.key_index);
                             node = frame.node->subs[frame.key_index];
+                            x_assert(node->key_count > 0);
                             break;
                         }
                     }
                 }
             } else {
+                x_assert(node->key_count > 0);
                 bt_push_stack_frame(tree, node, 0);
                 node = node->subs[0];
             }
