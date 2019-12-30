@@ -41,6 +41,9 @@ typedef BTREE_FREE_SIG(bt_free_sig);
 #define BTREE_REALLOC_SIG(name) void * name(void *user_context, void *ptr, size_t size)
 typedef BTREE_REALLOC_SIG(bt_realloc_sig);
 
+#define BTREE_VISIT_NODES_SIG(name) bt_bool name(void *user_context, BTreeKeyID id, void *data, U32 data_size)
+typedef BTREE_VISIT_NODES_SIG(bt_visit_nodes_sig);
+
 typedef struct BTreeKey {
     BTreeKeyID id;
     void *data;
@@ -393,24 +396,41 @@ bt_search(BTree *tree, U32 id)
     BTreeNode *node = tree->root;
 
     while (node) {
-        U32 i = 0;
-        BTreeNode *node_sub = node->subs[node->key_count];
+#if 1
+        U32 key_index;
 
-        for (i = 0; i < node->key_count; ++i) {
-            if (node->keys[i].id == id) {
-                return &node->keys[i];
+        for (key_index = 0; key_index < node->key_count; ++key_index) {
+            if (node->keys[key_index].id == id) {
+                return &node->keys[key_index];
             }
 
-            if (id < node->keys[i].id) {
-                node_sub = node->subs[i];
+            if (id < node->keys[key_index].id) {
                 break;
             }
         }
 
-        if (node_sub == NULL) {
-            break;
+        node = node->subs[key_index];
+#else
+        U32 min, max, mid;
+
+        min = 0;
+        max = node->key_count - 1;
+        mid = 0;
+
+        while (min < max) {
+            mid = (max - min) / 2;
+
+            if (id < node->keys[mid].id) {
+                min = mid + 1;
+            } else if (id > node->keys[mid].id) {
+                max = mid - 1;
+            } else {
+                return &node->keys[mid];
+            }
         }
-        node = node_sub;
+
+        node = node->subs[max];
+#endif
     }
 
     return NULL;
@@ -451,16 +471,16 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
         }
     }
 
-    if (bt_peek_stack_frame(tree, &frame)) {
+#if 0
         bt_dump_stack(tree);
+#endif
 
+    if (bt_peek_stack_frame(tree, &frame)) {
         if (frame.node->keys[frame.key_index].id != id) {
             x_assert(frame.node->key_count < x_countof(frame.node->keys));
             bt_shift_keys_right(frame.node, frame.key_index);
-            frame.node->keys[frame.key_index].id = id;
-            frame.node->keys[frame.key_index].data = data;
-            frame.node->keys[frame.key_index].data_size = data_size;
             frame.node->key_count += 1;
+            bt_node_set_key(frame.node, frame.key_index, id, data, data_size);
         }
     }
 
@@ -738,6 +758,44 @@ bt_delete(BTree *tree, U32 id)
     }
 
     return found;
+}
+
+BTREE_API void
+bt_visit_nodes(BTree *tree, void *user_context, bt_visit_nodes_sig *visit)
+{
+    BTreeNode *node = tree->root;
+
+    if (node != NULL) {
+        bt_reset_stack(tree);
+        while (node != NULL) {
+            U32 i;
+
+            for (i = 0; i < node->key_count; ++i) {
+                if (visit(user_context, node->keys[i].id, node->keys[i].data, node->keys[i].data_size) == bt_false) {
+                    return;
+                }
+            }
+
+            if (bt_is_node_leaf(node)) {
+                BTreeStackFrame frame;
+
+                node = NULL;
+                while (bt_pop_stack_frame(tree, &frame)) {
+                    frame.key_index += 1;
+                    if (frame.key_index <= frame.node->key_count) {
+                        if (frame.node->subs[frame.key_index] != NULL) {
+                            bt_push_stack_frame(tree, frame.node, frame.key_index);
+                            node = frame.node->subs[frame.key_index];
+                            break;
+                        }
+                    }
+                }
+            } else {
+                bt_push_stack_frame(tree, node, 0);
+                node = node->subs[0];
+            }
+        }
+    }
 }
 
 BTREE_INTERNAL void
