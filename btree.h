@@ -102,8 +102,13 @@ bt_search(BTree *tree, U32 id);
 BTREE_API void
 bt_insert(BTree *tree, U32 id, void *data, U32 data_size);
 
+BTREE_API bt_bool
+bt_delete(BTree *tree, U32 id);
+
 BTREE_API void
 bt_visit_keys(BTree *tree, BTreeVisitNodesMode mode, void *user_context, bt_visit_keys_sig *visit);
+
+/* -------------------------------------------------------------------------------- */
 
 BTREE_INTERNAL void
 bt_debug_printf(const char *format, ...);
@@ -615,32 +620,36 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
     }
 }
 
-BTREE_INTERNAL bt_bool
+BTREE_API bt_bool
 bt_delete(BTree *tree, U32 id)
 {
-    bt_bool found = bt_false;
     BTreeNode *node = tree->root;
     U32 key_index_delete = BTREE_INVALID_ID;
     BTreeNode *node_delete = NULL;
 
     bt_reset_stack(tree);
-
     while (node && node_delete == NULL) {
         U32 key_index;
 
         for (key_index = 0; key_index < node->key_count; ++key_index) {
-            if (id == node->keys[key_index].id) {
+            BTreeKey *key = bt_node_get_key(node, key_index);
+            if (key->id == id) {
                 node_delete = node;
                 key_index_delete = key_index;
                 break;
-            } else if (id < node->keys[key_index].id) {
+            } else if (id < key->id) {
                 break;
             }
         }
 
         bt_push_stack_frame(tree, node, key_index);
-        node = node->subs[key_index];
+        node = bt_node_get_sub(node, key_index);
     }
+
+    if (node_delete == NULL) {
+        return bt_false;
+    }
+
 
     {
         /* NOTE(nick): Picking largest ID on the left branch of node_delete and inserting it
@@ -650,6 +659,9 @@ bt_delete(BTree *tree, U32 id)
         BTreeNode *node_new_separator = NULL;
 
         while (node != NULL) {
+            BTreeKey *key;
+            BTreeKey *key_separator;
+
             bt_push_stack_frame(tree, node, node->key_count);
 
             if (node_new_separator == NULL) {
@@ -657,15 +669,28 @@ bt_delete(BTree *tree, U32 id)
                 frame_with_separator = tree->stack;
             }
 
-            if (node->keys[node->key_count - 1].id > node_new_separator->keys[node_new_separator->key_count - 1].id) {
+            key = bt_node_get_key(node, node->key_count - 1);
+            key_separator = bt_node_get_key(node_new_separator, node_new_separator->key_count - 1);
+
+            if (key->id > key_separator->id) {
                 node_new_separator = node;
                 frame_with_separator = tree->stack;
             }
 
-            node = node->subs[node->key_count];
+            node = bt_node_get_sub(node, node->key_count);
         }
 
         if (node_new_separator != NULL) {
+#if 1
+            BTreeKey *key;
+            BTreeNode *sub;
+
+            BTREE_ASSERT(node_new_separator->key_count > 0);
+            key = bt_node_get_key(node_new_separator, node_new_separator->key_count - 1);
+            bt_node_set_key(node_delete, key_index_delete, key->id, key->data, key->data_size);
+            bt_node_invalidate_key(node_new_separator, node_new_separator->key_count - 1);
+            node_new_separator->key_count -= 1;
+#else
             node_delete->keys[key_index_delete] = node_new_separator->keys[node_new_separator->key_count - 1];
             bt_node_invalidate_key(node_new_separator, node_new_separator->key_count - 1);
             node_new_separator->key_count -= 1;
@@ -674,15 +699,15 @@ bt_delete(BTree *tree, U32 id)
                 frame_with_separator->key_index = frame_with_separator->node->key_count - 1;
             }
             tree->stack = frame_with_separator;
+#endif
+
         } else {
             bt_shift_keys_left(node_delete, key_index_delete);
             node_delete->key_count -= 1;
         }
-
-        /* bt_dump_stack(tree); */
     }
 
-    /* NOTE(nick): Rebalance tree */
+    /* NOTE(nick): re-balance tree */
     while (bt_true) {
         BTreeStackFrame frame, frame_parent;
         BTreeNode *node_right, *node_left;
@@ -827,7 +852,7 @@ bt_delete(BTree *tree, U32 id)
         }
     }
 
-    return found;
+    return bt_true;
 }
 
 BTREE_API void
