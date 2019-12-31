@@ -502,47 +502,34 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
 {
     BTreeStackFrame frame;
 
-    if (!tree->root) {
+    if (tree->root == NULL) {
         tree->root = bt_new_node(tree);
     }
 
     {
         BTreeNode *node = tree->root;
-
         bt_reset_stack(tree);
         while (node) {
             U32 key_index;
-
             for (key_index = 0; key_index < node->key_count; ++key_index) {
-                if (node->keys[key_index].id == id) {
-                    break;
-                } else if (id < node->keys[key_index].id) {
+                BTreeKey *key = bt_node_get_key(node, key_index);
+                if (key->id == id) {
+                    return;
+                } else if (id < key->id) {
                     break;
                 }
             }
-
             /* NOTE(nick): Pushing frame in case we need to split. */
             bt_push_stack_frame(tree, node, key_index);
-
-            if (node->subs[key_index] != NULL) {
-                node = node->subs[key_index];
-            } else {
-                node = NULL;
-            }
+            node = bt_node_get_sub(node, key_index);
         }
     }
 
-#if 0
-        bt_dump_stack(tree);
-#endif
-
     if (bt_peek_stack_frame(tree, &frame)) {
-        if (frame.node->keys[frame.key_index].id != id) {
-            BTREE_ASSERT(frame.node->key_count < x_countof(frame.node->keys));
-            bt_shift_keys_right(frame.node, frame.key_index);
-            frame.node->key_count += 1;
-            bt_node_set_key(frame.node, frame.key_index, id, data, data_size);
-        }
+        BTREE_ASSERT(frame.node->key_count < x_countof(frame.node->keys));
+        bt_shift_keys_right(frame.node, frame.key_index);
+        frame.node->key_count += 1;
+        bt_node_set_key(frame.node, frame.key_index, id, data, data_size);
     }
 
     {
