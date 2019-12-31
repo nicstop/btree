@@ -16,7 +16,13 @@
 #define BTREE_IMPLEMENTATION
 #include "btree.h"
 
-static U32 ids[] = { 48, 85, 45, 92, 26, 49, 27, 22, 10, 93, 94, 96, 97,  98, 39, 83, 52, 73, 84, 76, 99, 32, 33, 75, 78 }; 
+#if 1
+static U32 ids[] = { 48, 85, 45, 92, 26, 49, 27, 22, 10, 93, 94, 96, 97, 98, 39, 83, 52, 73, 84, 76, 99, }; //32, 33, 75, 78, 102, 33, 1, 5, 8, 9, 13, 4, 25 }; 
+#else
+#include "test_set.h"
+#endif
+
+static S32 memory_usage = 0;
 
 BTREE_MALLOC_SIG(test_malloc)
 {
@@ -32,13 +38,26 @@ BTREE_MALLOC_SIG(test_malloc)
 
     return result;
 #else
-    return malloc(size);
+    void *result;
+
+    result = malloc(size + sizeof(U32));
+    *(U32 *)result = size;
+    result = (void *)((U8 *)result + sizeof(U32));
+    memory_usage += size;
+    return result;
 #endif
 }
 
 BTREE_FREE_SIG(test_free)
 {
-    free(ptr);
+    if (ptr != NULL) {
+        void *ptr_header = (void *)((U8 *)ptr - sizeof(U32)); 
+        U32 ptr_size = *(U32 *)(ptr_header);
+        memory_usage -= ptr_size;
+        x_assert(memory_usage >= 0);
+        x_memset(ptr, 0xfe, ptr_size);
+        free(ptr_header);
+    }
 }
 
 BTREE_REALLOC_SIG(test_realloc)
@@ -46,9 +65,9 @@ BTREE_REALLOC_SIG(test_realloc)
     x_assert_msg("no realloc, increase arena size");
 }
 
-BTREE_VISIT_NODES_SIG(test_visit_nodes)
+BTREE_VISIT_KEYS_SIG(test_visit_keys)
 {
-    //printf("Visited %d\n", id);
+    printf("Visited %d\n", id);
     return bt_true;
 }
 
@@ -90,9 +109,6 @@ test_id(U32 test_id)
         }
     }
 
-    bt_visit_nodes(&btree, NULL, test_visit_nodes);
-    return false;
-
     printf("---------------------------\n");
     printf("Deleting %d\n", test_id);
 
@@ -113,7 +129,10 @@ test_id(U32 test_id)
         }
     }
 
+    bt_visit_keys(&btree, BTreeVisitNodes_TopDown, NULL, test_visit_keys);
+
     bt_destroy(&btree);
+    x_assert(memory_usage == 0);
 
     return bt_true;
 }
