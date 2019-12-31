@@ -411,7 +411,6 @@ bt_destroy(BTree *tree)
             BTreeStackFrame frame;
 
             bt_free(tree, node);
-
             node = NULL;
             while (bt_pop_stack_frame(tree, &frame)) {
                 frame.key_index += 1;
@@ -420,9 +419,10 @@ bt_destroy(BTree *tree)
                     /* NOTE(nick): Traversed all sub nodes and returned back to the parent node. */
                     bt_free(tree, frame.node);
                 } else {
-                    if (frame.node->subs[frame.key_index] != NULL) {
+                    BTreeNode *sub = bt_node_get_sub(frame.node, frame.key_index);
+                    if (sub != NULL) {
                         bt_push_stack_frame(tree, frame.node, frame.key_index);
-                        node = frame.node->subs[frame.key_index];
+                        node = sub;
                         BTREE_ASSERT(node->key_count > 0);
                         break;
                     }
@@ -432,7 +432,7 @@ bt_destroy(BTree *tree)
             /* NOTE(nick): Descending down to a first sub-node */
             BTREE_ASSERT(node->key_count > 0);
             bt_push_stack_frame(tree, node, 0);
-            node = node->subs[0];
+            node = bt_node_get_sub(node, 0);
         }
     }
 
@@ -845,84 +845,92 @@ bt_delete(BTree *tree, U32 id)
 BTREE_API void
 bt_visit_keys(BTree *tree, BTreeVisitNodesMode mode, void *user_context, bt_visit_keys_sig *visit)
 {
-    BTreeNode *node = tree->root;
+    BTreeNode *node;
     U32 i;
 
-    if (node != NULL) {
-        bt_reset_stack(tree);
+    if (tree->root == NULL || visit == NULL) {
+        return;
+    }
 
-        switch (mode) {
-        case BTreeVisitNodes_TopDown: {
-            while (node != NULL) {
+    node = tree->root;
+    bt_reset_stack(tree);
+
+    switch (mode) {
+    case BTreeVisitNodes_TopDown: {
+        while (node != NULL) {
+            for (i = 0; i < node->key_count; ++i) {
+                BTreeKey *key = bt_node_get_key(node, i);
+                if (visit(user_context, key->id, key->data, key->data_size) == bt_false) {
+                    return;
+                }
+            }
+
+            if (bt_is_node_leaf(node)) {
+                BTreeStackFrame frame;
+
+                node = NULL;
+                while (bt_pop_stack_frame(tree, &frame)) {
+                    frame.key_index += 1;
+                    if (frame.key_index <= frame.node->key_count) {
+                        BTreeNode *sub = bt_node_get_sub(frame.node, frame.key_index);
+                        if (sub != NULL) {
+                            bt_push_stack_frame(tree, frame.node, frame.key_index);
+                            node = sub;
+                            BTREE_ASSERT(node->key_count > 0);
+                            break;
+                        }
+                    }
+                }
+            } else {
+                BTREE_ASSERT(node->key_count > 0);
+                bt_push_stack_frame(tree, node, 0);
+                node = bt_node_get_sub(node, 0);
+            }
+        }
+    } break;
+
+    case BTreeVisitNodes_BottomUp: {
+        while (node != NULL) {
+            if (bt_is_node_leaf(node)) {
+                BTreeStackFrame frame;
+
                 for (i = 0; i < node->key_count; ++i) {
-                    if (visit(user_context, node->keys[i].id, node->keys[i].data, node->keys[i].data_size) == bt_false) {
+                    BTreeKey *key = bt_node_get_key(node, i);
+                    if (visit(user_context, key->id, key->data, key->data_size) == bt_false) {
                         return;
                     }
                 }
 
-                if (bt_is_node_leaf(node)) {
-                    BTreeStackFrame frame;
+                node = NULL;
+                while (bt_pop_stack_frame(tree, &frame)) {
+                    frame.key_index += 1;
 
-                    node = NULL;
-                    while (bt_pop_stack_frame(tree, &frame)) {
-                        frame.key_index += 1;
-                        if (frame.key_index <= frame.node->key_count) {
-                            if (frame.node->subs[frame.key_index] != NULL) {
-                                bt_push_stack_frame(tree, frame.node, frame.key_index);
-                                node = frame.node->subs[frame.key_index];
-                                BTREE_ASSERT(node->key_count > 0);
-                                break;
+                    if (frame.key_index > frame.node->key_count) {
+                        for (i = 0; i < frame.node->key_count; ++i) {
+                            BTreeKey *key = bt_node_get_key(frame.node, i);
+                            if (visit(user_context, key->id, key->data, key->data_size) == bt_false) {
+                                return;
                             }
                         }
+                    } else {
+                        BTreeNode *sub = bt_node_get_sub(frame.node, frame.key_index);
+                        if (sub != NULL) {
+                            bt_push_stack_frame(tree, frame.node, frame.key_index);
+                            node = sub;
+                            BTREE_ASSERT(node->key_count > 0);
+                            break;
+                        }
                     }
-                } else {
-                    BTREE_ASSERT(node->key_count > 0);
-                    bt_push_stack_frame(tree, node, 0);
-                    node = node->subs[0];
                 }
+            } else {
+                BTREE_ASSERT(node->key_count > 0);
+                bt_push_stack_frame(tree, node, 0);
+                node = bt_node_get_sub(node, 0);
             }
-        } break;
-
-        case BTreeVisitNodes_BottomUp: {
-            while (node != NULL) {
-                if (bt_is_node_leaf(node)) {
-                    BTreeStackFrame frame;
-
-                    for (i = 0; i < node->key_count; ++i) {
-                        if (visit(user_context, node->keys[i].id, node->keys[i].data, node->keys[i].data_size) == bt_false) {
-                            return;
-                        }
-                    }
-
-                    node = NULL;
-                    while (bt_pop_stack_frame(tree, &frame)) {
-                        frame.key_index += 1;
-
-                        if (frame.key_index > frame.node->key_count) {
-                            for (i = 0; i < frame.node->key_count; ++i) {
-                                if (visit(user_context, frame.node->keys[i].id, frame.node->keys[i].data, frame.node->keys[i].data_size) == bt_false) {
-                                    return;
-                                }
-                            }
-                        } else {
-                            if (frame.node->subs[frame.key_index] != NULL) {
-                                bt_push_stack_frame(tree, frame.node, frame.key_index);
-                                node = frame.node->subs[frame.key_index];
-                                BTREE_ASSERT(node->key_count > 0);
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    BTREE_ASSERT(node->key_count > 0);
-                    bt_push_stack_frame(tree, node, 0);
-                    node = node->subs[0];
-                }
-            }
-        } break;
-
-        default: break;
         }
+    } break;
+
+    default: break;
     }
 }
 
