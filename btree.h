@@ -5,22 +5,29 @@
  * B-Tree single-header lib.
  * -------------------------------------------------------------------------------- 
  * Nikita Smith 
+ *
  */
 
 /* NOTE(nick): Here you can pick which order you want for this tree. */
-#define BTREE_NODE_COUNT 4 
+#define BTREE_NODE_COUNT 5 
 #define BTREE_KEY_COUNT ((BTREE_NODE_COUNT) - 1) 
 
 #define BTREE_API
 #define BTREE_INTERNAL
 
-typedef unsigned int U32;
+#include <stdint.h>
+typedef uint8_t bt_u08;
+typedef int8_t bt_s08;
+typedef uint16_t bt_u16;
+typedef int16_t bt_s16;
+typedef uint32_t bt_u32;
+typedef int32_t bt_s32;
+typedef bt_s32 bt_bool;
 
 #define bt_false 0
 #define bt_true 1
-typedef int bt_bool;
 
-#define BTREE_INVALID_ID UINT32_MAX
+#define BTREE_INVALID_ID 0xFFFFFFFF
 typedef int BTreeKeyID;
 
 #ifndef BTREE_CUSTOM_MEM
@@ -42,7 +49,7 @@ typedef BTREE_FREE_SIG(bt_free_sig);
 #define BTREE_REALLOC_SIG(name) void * name(void *user_context, void *ptr, size_t size)
 typedef BTREE_REALLOC_SIG(bt_realloc_sig);
 
-#define BTREE_VISIT_KEYS_SIG(name) bt_bool name(void *user_context, BTreeKeyID id, void *data, U32 data_size)
+#define BTREE_VISIT_KEYS_SIG(name) bt_bool name(void *user_context, BTreeKeyID id, void *data, bt_u32 data_size)
 typedef BTREE_VISIT_KEYS_SIG(bt_visit_keys_sig);
 
 typedef enum {
@@ -54,18 +61,18 @@ typedef enum {
 typedef struct BTreeKey {
     BTreeKeyID id;
     void *data;
-    U32 data_size;
+    bt_u32 data_size;
 } BTreeKey;
 
 typedef struct BTreeNode {
-    U32 key_count;
+    bt_u08 key_count;
     BTreeKey keys[BTREE_KEY_COUNT];
     struct BTreeNode *subs[BTREE_NODE_COUNT];
 } BTreeNode;
 
 typedef struct BTreeStackFrame {
+    bt_u08 key_index;
     BTreeNode *node;
-    U32 key_index;
     struct BTreeStackFrame *next;
 } BTreeStackFrame;
 
@@ -81,12 +88,12 @@ typedef struct BTreeAllocator {
 typedef struct BTree {
     BTreeAllocator allocator;
 
-    U32 stack_push_size;
-    U32 stack_memory_size;
+    bt_u32 stack_push_size;
+    bt_u32 stack_memory_size;
     void *stack_memory;
 
     BTreeNode *root;
-    U32 height;
+    bt_u32 height;
     BTreeStackFrame *stack;
 } BTree;
 
@@ -97,13 +104,13 @@ BTREE_API void
 bt_destroy(BTree *tree);
 
 BTREE_API BTreeKey *
-bt_search(BTree *tree, U32 id);
+bt_search(BTree *tree, bt_u32 id);
 
 BTREE_API void
-bt_insert(BTree *tree, U32 id, void *data, U32 data_size);
+bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size);
 
 BTREE_API bt_bool
-bt_delete(BTree *tree, U32 id);
+bt_delete(BTree *tree, bt_u32 id);
 
 BTREE_API void
 bt_visit_keys(BTree *tree, BTreeVisitNodesMode mode, void *user_context, bt_visit_keys_sig *visit);
@@ -129,7 +136,7 @@ BTREE_INTERNAL bt_bool
 bt_is_node_leaf(BTreeNode *node);
 
 BTREE_INTERNAL void
-bt_shift_keys_right(BTreeNode *node, U32 start_key);
+bt_shift_keys_right(BTreeNode *node, bt_u32 start_key);
 
 BTREE_INTERNAL void
 bt_push_stack_frame(BTree *tree, BTreeNode *node, BTreeKeyID key_id);
@@ -190,7 +197,7 @@ bt_new_node(BTree *tree)
 }
 
 BTREE_INTERNAL void
-bt_node_set_key(BTreeNode *node, U32 key_index, BTreeKeyID id, void *data, U32 data_size)
+bt_node_set_key(BTreeNode *node, bt_u32 key_index, BTreeKeyID id, void *data, bt_u32 data_size)
 {
     BTREE_ASSERT(key_index < x_countof(node->keys));
     node->keys[key_index].id = id;
@@ -199,21 +206,21 @@ bt_node_set_key(BTreeNode *node, U32 key_index, BTreeKeyID id, void *data, U32 d
 }
 
 BTREE_INTERNAL BTreeKey *
-bt_node_get_key(BTreeNode *node, U32 key_index)
+bt_node_get_key(BTreeNode *node, bt_u32 key_index)
 {
     BTREE_ASSERT(key_index < x_countof(node->keys));
     return &node->keys[key_index];
 }
 
 BTREE_INTERNAL void
-bt_node_invalidate_key(BTreeNode *node, U32 key_index)
+bt_node_invalidate_key(BTreeNode *node, bt_u32 key_index)
 {
     BTREE_ASSERT(key_index < x_countof(node->keys));
     bt_node_set_key(node, key_index, BTREE_INVALID_ID, NULL, 0);
 }
 
 BTREE_INTERNAL void
-bt_node_add_key(BTreeNode *node, BTreeKeyID id, void *data, U32 data_size)
+bt_node_add_key(BTreeNode *node, BTreeKeyID id, void *data, bt_u32 data_size)
 {
     if (node->key_count < x_countof(node->keys)) {
         bt_node_set_key(node, node->key_count, id, data, data_size);
@@ -235,7 +242,7 @@ bt_node_remove_key(BTreeNode *node)
 }
 
 BTREE_INTERNAL bt_bool
-bt_node_set_sub(BTreeNode *node, U32 sub_index, BTreeNode *sub)
+bt_node_set_sub(BTreeNode *node, bt_u32 sub_index, BTreeNode *sub)
 {
     bt_bool result = bt_false;
 
@@ -250,7 +257,7 @@ bt_node_set_sub(BTreeNode *node, U32 sub_index, BTreeNode *sub)
 }
 
 BTREE_INTERNAL BTreeNode *
-bt_node_get_sub(BTreeNode *node, U32 sub_index)
+bt_node_get_sub(BTreeNode *node, bt_u32 sub_index)
 {
     BTreeNode *result;
 
@@ -267,7 +274,7 @@ bt_node_get_sub(BTreeNode *node, U32 sub_index)
 BTREE_INTERNAL bt_bool
 bt_is_node_leaf(BTreeNode *node)
 {
-    U32 i;
+    bt_u32 i;
     for (i = 0; i < x_countof(node->subs); ++i) {
         if (node->subs[i] != 0) {
             return bt_false;
@@ -277,9 +284,9 @@ bt_is_node_leaf(BTreeNode *node)
 }
 
 BTREE_INTERNAL void
-bt_shift_keys_left(BTreeNode *node, U32 key_index)
+bt_shift_keys_left(BTreeNode *node, bt_u32 key_index)
 {
-    U32 i;
+    bt_u32 i;
     BTREE_ASSERT(node->key_count > 0);
     for (i = key_index; i < node->key_count - 1; ++i) {
         BTreeKey *key;
@@ -291,7 +298,7 @@ bt_shift_keys_left(BTreeNode *node, U32 key_index)
 }
 
 BTREE_INTERNAL void
-bt_shift_keys_right(BTreeNode *node, U32 start_key)
+bt_shift_keys_right(BTreeNode *node, bt_u32 start_key)
 {
     S32 i;
     for (i = x_countof(node->keys) - 2; i >= 0; --i) {
@@ -307,7 +314,7 @@ bt_shift_keys_right(BTreeNode *node, U32 start_key)
 }
 
 BTREE_INTERNAL void
-bt_shift_subs_left(BTreeNode *node, U32 key_index)
+bt_shift_subs_left(BTreeNode *node, bt_u32 key_index)
 {
     S32 i;
     for (i = (S32)key_index; i < (S32)node->key_count; ++i) {
@@ -320,7 +327,7 @@ bt_shift_subs_left(BTreeNode *node, U32 key_index)
 }
 
 BTREE_INTERNAL void
-bt_shift_subs_right(BTreeNode *node, U32 key_index)
+bt_shift_subs_right(BTreeNode *node, bt_u32 key_index)
 {
     S32 i;
     for (i = (S32)node->key_count - 1; i >= (S32)key_index; --i) {
@@ -448,15 +455,15 @@ bt_destroy(BTree *tree)
 }
 
 BTREE_API BTreeKey *
-bt_search(BTree *tree, U32 id)
+bt_search(BTree *tree, bt_u32 id)
 {
     BTreeNode *node = tree->root;
 
-    U32 cmp_counter = 0;
+    bt_u32 cmp_counter = 0;
 
     while (node) {
 #if 1
-        U32 key_index;
+        bt_u32 key_index;
 
         for (key_index = 0; key_index < node->key_count; ++key_index) {
             if (node->keys[key_index].id == id) {
@@ -470,7 +477,7 @@ bt_search(BTree *tree, U32 id)
 
         node = node->subs[key_index];
 #else
-        U32 min, max, mid;
+        bt_u32 min, max, mid;
 
         min = 0;
         max = node->key_count - 1;
@@ -498,7 +505,7 @@ bt_search(BTree *tree, U32 id)
 }
 
 BTREE_API void
-bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
+bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size)
 {
     BTreeStackFrame frame;
 
@@ -510,7 +517,7 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
         BTreeNode *node = tree->root;
         bt_reset_stack(tree);
         while (node) {
-            U32 key_index;
+            bt_u32 key_index;
             for (key_index = 0; key_index < node->key_count; ++key_index) {
                 BTreeKey *key = bt_node_get_key(node, key_index);
                 if (key->id == id) {
@@ -536,7 +543,7 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
         while (bt_pop_stack_frame(tree, &frame)) {
             BTreeNode *node_split = NULL;
             BTreeKey median_key;
-            U32 i;
+            bt_u32 i;
 
             if (frame.node->key_count < x_countof(frame.node->keys)) {
                 break;
@@ -608,15 +615,15 @@ bt_insert(BTree *tree, U32 id, void *data, U32 data_size)
 }
 
 BTREE_API bt_bool
-bt_delete(BTree *tree, U32 id)
+bt_delete(BTree *tree, bt_u32 id)
 {
     BTreeNode *node = tree->root;
-    U32 key_index_delete = BTREE_INVALID_ID;
+    bt_u32 key_index_delete = BTREE_INVALID_ID;
     BTreeNode *node_delete = NULL;
 
     bt_reset_stack(tree);
     while (node && node_delete == NULL) {
-        U32 key_index;
+        bt_u32 key_index;
 
         for (key_index = 0; key_index < node->key_count; ++key_index) {
             BTreeKey *key = bt_node_get_key(node, key_index);
@@ -699,7 +706,7 @@ bt_delete(BTree *tree, U32 id)
         BTreeStackFrame frame, frame_parent;
         BTreeNode *node_right, *node_left;
         BTreeNode *node_separator;
-        U32 key_index_separator;
+        bt_u32 key_index_separator;
         BTreeNode *node_deficient;
         BTreeKey *key;
         BTreeNode *sub;
@@ -794,9 +801,9 @@ bt_delete(BTree *tree, U32 id)
                 copy_count = x_countof(node_dst->keys) - node_src->key_count - node_dst->key_count - 1;
             }
             if (copy_count >= 0) {
-                U32 i;
+                bt_u32 i;
 
-                for (i = 0; i < (U32)copy_count; ++i) {
+                for (i = 0; i < (bt_u32)copy_count; ++i) {
                     BTREE_ASSERT(node_dst->key_count < x_countof(node_dst->keys));
                     BTREE_ASSERT(node_src->key_count < x_countof(node_src->keys));
 
@@ -846,7 +853,7 @@ BTREE_API void
 bt_visit_keys(BTree *tree, BTreeVisitNodesMode mode, void *user_context, bt_visit_keys_sig *visit)
 {
     BTreeNode *node;
-    U32 i;
+    bt_u32 i;
 
     if (tree->root == NULL || visit == NULL) {
         return;
@@ -938,7 +945,7 @@ BTREE_INTERNAL void
 bt_dump_stack(BTree *tree)
 {
     BTreeStackFrame *frame = tree->stack;
-    U32 depth = 0;
+    bt_u32 depth = 0;
     bt_debug_printf("Dumping node stack:\n");
     while (frame) {
         if (frame->key_index < x_countof(frame->node->keys)) {
@@ -954,7 +961,7 @@ bt_dump_stack(BTree *tree)
 BTREE_INTERNAL void
 bt_dump_node_keys(BTreeNode *node)
 {
-    U32 i;
+    bt_u32 i;
     for (i = 0; i < node->key_count; ++i) {
         bt_debug_printf("%d ", node->keys[i].id);
     }
@@ -962,7 +969,7 @@ bt_dump_node_keys(BTreeNode *node)
 
     for (i = 0; i < x_countof(node->subs); ++i) {
         if (node->subs[i] != NULL) {
-            U32 k;
+            bt_u32 k;
             bt_debug_printf("Sub key %d, key_count = %d, 0x%llx:\n", i, node->subs[i]->key_count, node->subs[i]);
             for (k = 0; k < node->subs[i]->key_count; ++k) {
                 bt_debug_printf("%d ", node->subs[i]->keys[k].id);
@@ -976,14 +983,14 @@ BTREE_INTERNAL void
 bt_dump_tree(BTree *tree, x_arena *arena)
 {
     BTreeNode *node = tree->root;
-    U32 depth = 0;
+    bt_u32 depth = 0;
     x_arena_temp temp;
     BTreeStackFrame *stack = 0;
 
     temp = x_arena_temp_begin(arena);
 
     while (node) {
-        U32 i;
+        bt_u32 i;
 
         for (i = 0; i < node->key_count; ++i) {
             bt_debug_printf("%d ", node->keys[i].id);
