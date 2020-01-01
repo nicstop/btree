@@ -2,18 +2,18 @@
 #define BTREE_HEADER_INCLUDE
 
 /* 
- * B-Tree single-header lib.
+ * B-Tree single-header lib by Nikita Smith
+ *
  * -------------------------------------------------------------------------------- 
- * Nikita Smith 
  *
  */
 
 /* NOTE(nick): Here you can pick which order you want for this tree. */
-#define BTREE_NODE_COUNT 5 
+#define BTREE_NODE_COUNT 4 
 #define BTREE_KEY_COUNT ((BTREE_NODE_COUNT) - 1) 
 
 #define BTREE_API
-#define BTREE_INTERNAL
+#define BTREE_INTERNAL static
 
 #include <stdint.h>
 typedef uint8_t bt_u08;
@@ -25,7 +25,7 @@ typedef int32_t bt_s32;
 typedef bt_s32 bt_bool;
 
 #define bt_false 0
-#define bt_true 1
+#define bt_true  1
 
 #define BTREE_INVALID_ID 0xFFFFFFFF
 typedef int BTreeKeyID;
@@ -49,8 +49,16 @@ typedef BTREE_FREE_SIG(bt_free_sig);
 #define BTREE_REALLOC_SIG(name) void * name(void *user_context, void *ptr, size_t size)
 typedef BTREE_REALLOC_SIG(bt_realloc_sig);
 
-#define BTREE_VISIT_KEYS_SIG(name) bt_bool name(void *user_context, BTreeKeyID id, void *data, bt_u32 data_size)
+#define BTREE_VISIT_KEYS_SIG(name) bt_bool name(void *user_context, BTreeKeyID id, const void *data)
 typedef BTREE_VISIT_KEYS_SIG(bt_visit_keys_sig);
+
+typedef enum {
+    BTreeErrorCode_Ok,
+    BTreeErrorCode_AllocationFailed,
+    BTreeErrorCode_OpDenied,
+    BTreeErrorCode_RebalanceFailed,
+    BTreeErrorCode_IDNotFound
+} BTreeErrorCode;
 
 typedef enum {
     BTreeVisitNodes_Null,
@@ -60,8 +68,7 @@ typedef enum {
 
 typedef struct BTreeKey {
     BTreeKeyID id;
-    void *data;
-    bt_u32 data_size;
+    void const *data;
 } BTreeKey;
 
 typedef struct BTreeNode {
@@ -79,8 +86,10 @@ typedef struct BTreeStackFrame {
 typedef struct BTreeAllocator {
     void *alloc_memory_context;
     bt_malloc_sig *alloc_memory;
+
     void *free_memory_context;
     bt_free_sig *free_memory;
+
     void *realloc_memory_context;
     bt_realloc_sig *realloc_memory;
 } BTreeAllocator;
@@ -91,10 +100,9 @@ typedef struct BTree {
     bt_u32 stack_push_size;
     bt_u32 stack_memory_size;
     void *stack_memory;
+    BTreeStackFrame *stack;
 
     BTreeNode *root;
-    bt_u32 height;
-    BTreeStackFrame *stack;
 } BTree;
 
 BTREE_API void
@@ -106,8 +114,8 @@ bt_destroy(BTree *tree);
 BTREE_API BTreeKey *
 bt_search(BTree *tree, bt_u32 id);
 
-BTREE_API void
-bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size);
+BTREE_API BTreeErrorCode
+bt_insert(BTree *tree, bt_u32 id, const void *data);
 
 BTREE_API bt_bool
 bt_delete(BTree *tree, bt_u32 id);
@@ -197,12 +205,11 @@ bt_new_node(BTree *tree)
 }
 
 BTREE_INTERNAL void
-bt_node_set_key(BTreeNode *node, bt_u32 key_index, BTreeKeyID id, void *data, bt_u32 data_size)
+bt_node_set_key(BTreeNode *node, bt_u32 key_index, BTreeKeyID id, const void *data)
 {
     BTREE_ASSERT(key_index < x_countof(node->keys));
     node->keys[key_index].id = id;
     node->keys[key_index].data = data;
-    node->keys[key_index].data_size = data_size;
 }
 
 BTREE_INTERNAL BTreeKey *
@@ -216,14 +223,14 @@ BTREE_INTERNAL void
 bt_node_invalidate_key(BTreeNode *node, bt_u32 key_index)
 {
     BTREE_ASSERT(key_index < x_countof(node->keys));
-    bt_node_set_key(node, key_index, BTREE_INVALID_ID, NULL, 0);
+    bt_node_set_key(node, key_index, BTREE_INVALID_ID, NULL);
 }
 
 BTREE_INTERNAL void
-bt_node_add_key(BTreeNode *node, BTreeKeyID id, void *data, bt_u32 data_size)
+bt_node_add_key(BTreeNode *node, BTreeKeyID id, const void *data)
 {
     if (node->key_count < x_countof(node->keys)) {
-        bt_node_set_key(node, node->key_count, id, data, data_size);
+        bt_node_set_key(node, node->key_count, id, data);
         node->key_count += 1;
     } else {
         BTREE_ASSERT_FAILURE("cannot add key to a full node");
@@ -292,7 +299,7 @@ bt_shift_keys_left(BTreeNode *node, bt_u32 key_index)
         BTreeKey *key;
 
         key = bt_node_get_key(node, i + 1);
-        bt_node_set_key(node, i, key->id, key->data, key->data_size);
+        bt_node_set_key(node, i, key->id, key->data);
         bt_node_invalidate_key(node, i + 1);
     }
 }
@@ -308,7 +315,7 @@ bt_shift_keys_right(BTreeNode *node, bt_u32 start_key)
             break;
         }
         key = bt_node_get_key(node, i);
-        bt_node_set_key(node, i + 1, key->id, key->data, key->data_size);
+        bt_node_set_key(node, i + 1, key->id, key->data);
         bt_node_invalidate_key(node, i);
     }
 }
@@ -399,7 +406,6 @@ BTREE_API void
 bt_create(BTree *tree, BTreeAllocator *allocator)
 {
     tree->root = NULL;
-    tree->height = 0;
 
     tree->stack_push_size = 0;
     tree->stack_memory_size = 0;
@@ -450,7 +456,6 @@ bt_destroy(BTree *tree)
     tree->stack_memory = NULL;
 
     tree->root = NULL;
-    tree->height = 0;
     tree->stack = NULL;
 }
 
@@ -504,13 +509,17 @@ bt_search(BTree *tree, bt_u32 id)
     return NULL;
 }
 
-BTREE_API void
-bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size)
+BTREE_API BTreeErrorCode
+bt_insert(BTree *tree, bt_u32 id, const void *data)
 {
+    BTreeErrorCode error_code = BTreeErrorCode_OpDenied;
     BTreeStackFrame frame;
 
     if (tree->root == NULL) {
         tree->root = bt_new_node(tree);
+        if (tree->root == NULL) {
+            return BTreeErrorCode_AllocationFailed;
+        }
     }
 
     {
@@ -521,7 +530,7 @@ bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size)
             for (key_index = 0; key_index < node->key_count; ++key_index) {
                 BTreeKey *key = bt_node_get_key(node, key_index);
                 if (key->id == id) {
-                    return;
+                    return BTreeErrorCode_Ok;
                 } else if (id < key->id) {
                     break;
                 }
@@ -536,7 +545,9 @@ bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size)
         BTREE_ASSERT(frame.node->key_count < x_countof(frame.node->keys));
         bt_shift_keys_right(frame.node, frame.key_index);
         frame.node->key_count += 1;
-        bt_node_set_key(frame.node, frame.key_index, id, data, data_size);
+        bt_node_set_key(frame.node, frame.key_index, id, data);
+
+        error_code = BTreeErrorCode_Ok;
     }
 
     {
@@ -545,15 +556,16 @@ bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size)
             BTreeKey median_key;
             bt_u32 i;
 
+            error_code = BTreeErrorCode_RebalanceFailed;
             if (frame.node->key_count < x_countof(frame.node->keys)) {
                 break;
             }
 
             node_split = bt_new_node(tree);
-
-            bt_debug_printf("--------------------------------------------------------------------------------\n");
-            bt_debug_printf("Detected a full node, splitting keys:\n");
-            bt_dump_node_keys(frame.node);
+            if (node_split == NULL) {
+                error_code = BTreeErrorCode_AllocationFailed;
+                break;
+            }
 
             /* NOTE(nick): Copy upper-half of the sub-nodes to the split node. */
             for (i = x_countof(frame.node->subs) / 2; i < x_countof(frame.node->subs); ++i) {
@@ -565,7 +577,7 @@ bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size)
             /* NOTE(nick): Copy upper-half of the keys to the split node. */
             for (i = x_countof(frame.node->keys) / 2; i < x_countof(frame.node->keys); ++i) {
                 BTreeKey *key = bt_node_get_key(frame.node, i);
-                bt_node_add_key(node_split, key->id, key->data, key->data_size);
+                bt_node_add_key(node_split, key->id, key->data);
                 bt_node_invalidate_key(frame.node, i);
                 frame.node->key_count -= 1;
             }
@@ -579,10 +591,9 @@ bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size)
                 bt_node_invalidate_key(frame.node, frame.node->key_count - 1);
                 frame.node->key_count -= 1;
             }
+
             BTREE_ASSERT(node_split->key_count > 0);
             BTREE_ASSERT(frame.node->key_count > 0);
-
-            bt_debug_printf("Median: %d\n", median_key.id);
 
             { 
                 /* NOTE(nick): Inserting a new median key. */
@@ -590,10 +601,9 @@ bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size)
                 BTreeStackFrame frame_parent;
 
                 if (bt_peek_stack_frame(tree, &frame_parent)) {
-
                     BTREE_ASSERT(frame_parent.node->key_count < x_countof(frame_parent.node->keys));
                     bt_shift_keys_right(frame_parent.node, frame_parent.key_index);
-                    bt_node_set_key(frame_parent.node, frame_parent.key_index, median_key.id, median_key.data, median_key.data_size);
+                    bt_node_set_key(frame_parent.node, frame_parent.key_index, median_key.id, median_key.data);
 
                     frame_parent.node->key_count += 1;
                     frame_parent.key_index += 1;
@@ -604,17 +614,24 @@ bt_insert(BTree *tree, bt_u32 id, void *data, bt_u32 data_size)
                 } else {
                     /* NOTE(nick): Splitting reached root node, inserting a new root. */
                     BTreeNode *new_root = bt_new_node(tree);
-                    bt_node_add_key(new_root, median_key.id, median_key.data, median_key.data_size);
-                    bt_node_set_sub(new_root, 0, frame.node);
-                    bt_node_set_sub(new_root, 1, node_split);
-                    tree->root = new_root;
+                    if (new_root != NULL) {
+                        bt_node_add_key(new_root, median_key.id, median_key.data);
+                        bt_node_set_sub(new_root, 0, frame.node);
+                        bt_node_set_sub(new_root, 1, node_split);
+                        tree->root = new_root;
+                    } else {
+                        error_code = BTreeErrorCode_AllocationFailed;
+                        break;
+                    }
                 }
             }
         }
     }
+
+    return error_code;
 }
 
-BTREE_API bt_bool
+BTREE_API BTreeErrorCode
 bt_delete(BTree *tree, bt_u32 id)
 {
     BTreeNode *node = tree->root;
@@ -641,13 +658,13 @@ bt_delete(BTree *tree, bt_u32 id)
     }
 
     if (node_delete == NULL) {
-        return bt_false;
+        return BTreeErrorCode_IDNotFound;
     }
-
 
     {
         /* NOTE(nick): Picking largest ID on the left branch of node_delete and inserting it
-         * instead of the key that is being deleted, because we need to keep this branch balanced. */
+         * instead of the key that is being deleted, because after delete branch becomes
+         * unbalanced and to compensate for it we insert largest ID. */
 
         BTreeStackFrame *frame_with_separator = NULL;
         BTreeNode *node_new_separator = NULL;
@@ -681,7 +698,7 @@ bt_delete(BTree *tree, bt_u32 id)
 
             BTREE_ASSERT(node_new_separator->key_count > 0);
             key = bt_node_get_key(node_new_separator, node_new_separator->key_count - 1);
-            bt_node_set_key(node_delete, key_index_delete, key->id, key->data, key->data_size);
+            bt_node_set_key(node_delete, key_index_delete, key->id, key->data);
             bt_node_invalidate_key(node_new_separator, node_new_separator->key_count - 1);
             node_new_separator->key_count -= 1;
 #else
@@ -722,16 +739,14 @@ bt_delete(BTree *tree, bt_u32 id)
         node_separator = frame_parent.node;
         key_index_separator = frame_parent.key_index;
 
+        node_left = NULL;
         if (key_index_separator > 0) {
             node_left = node_separator->subs[key_index_separator - 1];
-        } else {
-            node_left = NULL;
         }
 
+        node_right = NULL;
         if ((key_index_separator + 1) < x_countof(node_separator->subs)) {
             node_right = node_separator->subs[key_index_separator + 1];
-        }  else {
-            node_right = NULL;
         }
 
         if (node_right != NULL && node_right->key_count > 1) {
@@ -739,10 +754,10 @@ bt_delete(BTree *tree, bt_u32 id)
             BTREE_ASSERT(frame_parent.key_index == key_index_separator);
 
             key = bt_node_get_key(node_separator, key_index_separator);
-            bt_node_add_key(node_deficient, key->id, key->data, key->data_size);
+            bt_node_add_key(node_deficient, key->id, key->data);
 
             key = bt_node_get_key(node_right, 0);
-            bt_node_set_key(node_separator, key_index_separator, key->id, key->data, key->data_size);
+            bt_node_set_key(node_separator, key_index_separator, key->id, key->data);
 
             /* NOTE(nick): Don't forget to move sub-node too. It belongs to the key that we 
              * moved from right-node to the deficient-node. */
@@ -758,7 +773,7 @@ bt_delete(BTree *tree, bt_u32 id)
             BTREE_ASSERT(key_index_separator > 0);
 
             key = bt_node_get_key(node_separator, key_index_separator - 1);
-            bt_node_add_key(node_deficient, key->id, key->data, key->data_size);
+            bt_node_add_key(node_deficient, key->id, key->data);
 
             bt_shift_subs_right(node_deficient, 0);
             sub = bt_node_get_sub(node_left, node_left->key_count);
@@ -766,7 +781,7 @@ bt_delete(BTree *tree, bt_u32 id)
             bt_node_set_sub(node_left, node_left->key_count, NULL);
 
             key = bt_node_get_key(node_left, node_left->key_count - 1);
-            bt_node_set_key(node_separator, key_index_separator - 1, key->id, key->data, key->data_size);
+            bt_node_set_key(node_separator, key_index_separator - 1, key->id, key->data);
             bt_node_invalidate_key(node_left, node_left->key_count - 1);
             node_left->key_count -= 1;
         } else {
@@ -783,7 +798,7 @@ bt_delete(BTree *tree, bt_u32 id)
 
                 /* NOTE(nick): Copy down key from parent to this deficient node. */
                 key = bt_node_get_key(node_separator, key_index_separator - 1);
-                bt_node_add_key(node_dst, key->id, key->data, key->data_size);
+                bt_node_add_key(node_dst, key->id, key->data);
                 bt_shift_keys_left(node_separator, key_index_separator - 1);
                 bt_shift_subs_left(node_separator, key_index_separator);
             } else {
@@ -800,30 +815,27 @@ bt_delete(BTree *tree, bt_u32 id)
             if ((node_dst->key_count + copy_count) >= x_countof(node_dst->keys)) {
                 copy_count = x_countof(node_dst->keys) - node_src->key_count - node_dst->key_count - 1;
             }
-            if (copy_count >= 0) {
-                bt_u32 i;
 
-                for (i = 0; i < (bt_u32)copy_count; ++i) {
-                    BTREE_ASSERT(node_dst->key_count < x_countof(node_dst->keys));
-                    BTREE_ASSERT(node_src->key_count < x_countof(node_src->keys));
+            for (i = 0; i < copy_count; ++i) {
+                BTREE_ASSERT(node_dst->key_count < x_countof(node_dst->keys));
+                BTREE_ASSERT(node_src->key_count < x_countof(node_src->keys));
 
-                    key = bt_node_get_key(node_src, i);
-                    sub = bt_node_get_sub(node_src, i);
+                key = bt_node_get_key(node_src, i);
+                sub = bt_node_get_sub(node_src, i);
 
-                    bt_node_set_key(node_dst, node_dst->key_count + i, key->id, key->data, key->data_size);
-                    bt_node_set_sub(node_dst, node_dst->key_count + i, sub);
+                bt_node_set_key(node_dst, node_dst->key_count + i, key->id, key->data);
+                bt_node_set_sub(node_dst, node_dst->key_count + i, sub);
 
-                    bt_node_invalidate_key(node_src, i);
-                    bt_shift_subs_left(node_src, i);
+                bt_node_invalidate_key(node_src, i);
+                bt_shift_subs_left(node_src, i);
 
-                    node_src->key_count -= 1;
-                    node_dst->key_count += 1;
-                }
-
-                sub = bt_node_get_sub(node_src, node_src->key_count);
-                bt_node_set_sub(node_src, node_src->key_count, NULL);
-                bt_node_set_sub(node_dst, node_dst->key_count, sub);
+                node_src->key_count -= 1;
+                node_dst->key_count += 1;
             }
+
+            sub = bt_node_get_sub(node_src, node_src->key_count);
+            bt_node_set_sub(node_src, node_src->key_count, NULL);
+            bt_node_set_sub(node_dst, node_dst->key_count, sub);
 
             if (node_src->key_count == 0) {
                 if (node_src == tree->root) {
@@ -846,7 +858,7 @@ bt_delete(BTree *tree, bt_u32 id)
         }
     }
 
-    return bt_true;
+    return BTreeErrorCode_Ok;
 }
 
 BTREE_API void
@@ -867,7 +879,7 @@ bt_visit_keys(BTree *tree, BTreeVisitNodesMode mode, void *user_context, bt_visi
         while (node != NULL) {
             for (i = 0; i < node->key_count; ++i) {
                 BTreeKey *key = bt_node_get_key(node, i);
-                if (visit(user_context, key->id, key->data, key->data_size) == bt_false) {
+                if (visit(user_context, key->id, key->data) == bt_false) {
                     return;
                 }
             }
@@ -903,7 +915,7 @@ bt_visit_keys(BTree *tree, BTreeVisitNodesMode mode, void *user_context, bt_visi
 
                 for (i = 0; i < node->key_count; ++i) {
                     BTreeKey *key = bt_node_get_key(node, i);
-                    if (visit(user_context, key->id, key->data, key->data_size) == bt_false) {
+                    if (visit(user_context, key->id, key->data) == bt_false) {
                         return;
                     }
                 }
@@ -915,7 +927,7 @@ bt_visit_keys(BTree *tree, BTreeVisitNodesMode mode, void *user_context, bt_visi
                     if (frame.key_index > frame.node->key_count) {
                         for (i = 0; i < frame.node->key_count; ++i) {
                             BTreeKey *key = bt_node_get_key(frame.node, i);
-                            if (visit(user_context, key->id, key->data, key->data_size) == bt_false) {
+                            if (visit(user_context, key->id, key->data) == bt_false) {
                                 return;
                             }
                         }
