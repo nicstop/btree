@@ -728,7 +728,6 @@ bt_delete(BTree *tree, bt_u32 id)
         }
 
         if (node_new_separator != NULL) {
-#if 1
             BTreeKey *key;
             BTreeNode *sub;
 
@@ -737,17 +736,6 @@ bt_delete(BTree *tree, bt_u32 id)
             bt_node_set_key(node_delete, key_index_delete, key->id, key->data);
             bt_node_invalidate_key(node_new_separator, node_new_separator->key_count - 1);
             node_new_separator->key_count -= 1;
-#else
-            node_delete->keys[key_index_delete] = node_new_separator->keys[node_new_separator->key_count - 1];
-            bt_node_invalidate_key(node_new_separator, node_new_separator->key_count - 1);
-            node_new_separator->key_count -= 1;
-
-            if (frame_with_separator->node->subs[frame_with_separator->key_index] == NULL) {
-                frame_with_separator->key_index = frame_with_separator->node->key_count - 1;
-            }
-            tree->stack = frame_with_separator;
-#endif
-
         } else {
             bt_shift_keys_left(node_delete, key_index_delete);
             node_delete->key_count -= 1;
