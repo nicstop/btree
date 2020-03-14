@@ -1,7 +1,7 @@
 #define BT_IMPLEMENTATION
 #include "btree.h"
 
-#if 0
+#if 1
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -25,7 +25,7 @@ static U32 ids[] = { 48, 85, 45, 92, 26, 49, 27, 22, 10, 93, 94, 96, 97, 98, 39,
 
 static S32 memory_usage = 0;
 
-BTREE_MALLOC_SIG(test_malloc)
+BT_MALLOC_SIG(test_malloc)
 {
 #if 0
     static char memory[1024 * 16];
@@ -40,7 +40,6 @@ BTREE_MALLOC_SIG(test_malloc)
     return result;
 #else
     void *result;
-
     result = malloc(size + sizeof(U32));
     *(U32 *)result = size;
     result = (void *)((U8 *)result + sizeof(U32));
@@ -49,7 +48,7 @@ BTREE_MALLOC_SIG(test_malloc)
 #endif
 }
 
-BTREE_FREE_SIG(test_free)
+BT_FREE_SIG(test_free)
 {
     if (ptr != NULL) {
         void *ptr_header = (void *)((U8 *)ptr - sizeof(U32)); 
@@ -61,12 +60,12 @@ BTREE_FREE_SIG(test_free)
     }
 }
 
-BTREE_REALLOC_SIG(test_realloc)
+BT_REALLOC_SIG(test_realloc)
 {
     x_assert_msg("no realloc, increase arena size");
 }
 
-BTREE_VISIT_KEYS_SIG(test_visit_keys)
+BT_VISIT_KEYS_SIG(test_visit_keys)
 {
     printf("Visited %d\n", id);
     return bt_true;
@@ -77,8 +76,8 @@ test_id(U32 test_id)
 {
     U32 i;
 
-    BTreeAllocator allocator;
-    BTree btree;
+    BT_Allocator allocator;
+    BT_Context btree;
 
     allocator.alloc_memory_context = NULL;
     allocator.alloc_memory = test_malloc;
@@ -132,7 +131,7 @@ test_id(U32 test_id)
         }
     }
 
-    bt_visit_keys(&btree, BTreeVisitNodes_TopDown, NULL, test_visit_keys);
+    bt_visit_keys(&btree, BT_VISIT_NODE_TopDown, NULL, test_visit_keys);
 
     bt_destroy(&btree);
     x_assert(memory_usage == 0);
@@ -146,8 +145,8 @@ main(int argc, char *argv[])
     U32 i;
 
     printf("B-Tree Stats:\n");
-    printf("Key count = %d\n", BTREE_KEY_COUNT);
-    printf("Node count = %d\n", BTREE_NODE_COUNT);
+    printf("Key count = %d\n", BT_KEY_COUNT);
+    printf("Node count = %d\n", BT_NODE_COUNT);
     printf("------------------------------\n");
 
 #if 1
