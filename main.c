@@ -1,3 +1,7 @@
+#define BT_IMPLEMENTATION
+#include "btree.h"
+
+#if 0
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -12,9 +16,6 @@
 
 #define XLIB_CORE_ARENA_IMPLEMENTATION
 #include "xlib/core/arena.h"
-
-#define BTREE_IMPLEMENTATION
-#include "btree.h"
 
 #if 1
 static U32 ids[] = { 48, 85, 45, 92, 26, 49, 27, 22, 10, 93, 94, 96, 97, 98, 39, 83, 52, 73, 84, 76, 99, }; //32, 33, 75, 78, 102, 33, 1, 5, 8, 9, 13, 4, 25 }; 
@@ -94,8 +95,9 @@ test_id(U32 test_id)
         U32 k;
 
         printf("Inserting %d...", ids[i]);
-        bt_insert(&btree, ids[i], &ids[i], sizeof(ids[i]));
+        bt_insert(&btree, ids[i], &ids[i]);
 
+#if 1
         for (k = 0; k < i; ++k) {
             if (bt_search(&btree, ids[k]) != NULL) {
             } else {
@@ -107,6 +109,7 @@ test_id(U32 test_id)
         if (k == i) {
             printf("OK.\n");
         }
+#endif
     }
 
     printf("---------------------------\n");
@@ -164,4 +167,9 @@ main(int argc, char *argv[])
 
     return 0;
 }
-
+#else
+int main(int argc, char *argv[])
+{
+    return 0;
+}
+#endif
